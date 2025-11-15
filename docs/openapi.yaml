@@ -1,0 +1,187 @@
+openapi: 3.0.3
+time: '2024-01-01T00:00:00Z'
+info:
+  title: VOIKE-X Backend API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Service health
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  db:
+                    type: string
+                  kernel:
+                    type: number
+  /ingest/file:
+    post:
+      summary: Ingest a file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobId:
+                    type: string
+                  table:
+                    type: string
+  /ingest/{jobId}:
+    get:
+      summary: Get ingest job
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema:
+                type: object
+  /query:
+    post:
+      summary: Execute hybrid query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VDBQuery'
+      responses:
+        '200':
+          description: Result rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    $ref: '#/components/schemas/VDBMeta'
+  /kernel/state:
+    get:
+      summary: Kernel + DAI state
+      responses:
+        '200':
+          description: State payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  energy:
+                    type: number
+                  dai:
+                    type: object
+                  limits:
+                    type: object
+  /ledger/recent:
+    get:
+      summary: Recent Truth Ledger entries
+      responses:
+        '200':
+          description: Entries array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /mcp/tools:
+    get:
+      summary: List MCP tools
+      responses:
+        '200':
+          description: Tools
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/McpTool'
+  /mcp/execute:
+    post:
+      summary: Execute MCP tool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                input:
+                  type: object
+                context:
+                  type: object
+      responses:
+        '200':
+          description: Tool response
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  schemas:
+    VDBQuery:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [sql, semantic, hybrid]
+        sql:
+          type: string
+        semanticText:
+          type: string
+        filters:
+          type: object
+        target:
+          type: string
+    VDBMeta:
+      type: object
+      properties:
+        engine:
+          type: string
+        latencyMs:
+          type: number
+        correctedQuery:
+          type: object
+        kernelTraceId:
+          type: string
+    McpTool:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
