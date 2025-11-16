@@ -11,17 +11,17 @@ import requests
 
 API_KEY = "4cdef1e80151bc5684e1edb20e502033515c5144dbb6180b8f27cbd0e3883369"
 BASE_URL = os.environ.get("VOIKE_BASE_URL", "https://voike.supremeuf.com")
-FIB_N = int(os.environ.get("FIB_N", "30"))
+FIB_N = int(os.environ.get("FIB_N", "300"))
 
 SQL = f"""
 WITH RECURSIVE fib(idx, a, b) AS (
-  SELECT 0, 0::bigint, 1::bigint
+  SELECT 0, 0::numeric, 1::numeric
   UNION ALL
   SELECT idx + 1, b, a + b
   FROM fib
   WHERE idx < {FIB_N}
 )
-SELECT a AS fib_value
+SELECT a::text AS fib_value
 FROM fib
 WHERE idx = {FIB_N};
 """
