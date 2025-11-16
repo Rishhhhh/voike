@@ -1,6 +1,6 @@
 # VOIKE-X Backend
 
-VOIKE-X is a headless, MCP-native database engine that fuses hybrid Postgres/pgvector storage, universal ingestion, and transparent semantic kernels. There is **no GUI** baked in—developers interact entirely through HTTP, WebSocket, CLI scripts, or their own UIs.
+> MCP-native, kernel-aware database backend – **headless only**. Everything is API-first so you can bolt on your own landing page, admin console, or SDK.
 
 ```
 Clients / CLI / SDK
@@ -16,26 +16,30 @@ Hybrid VDB (SQL + Document + Vector + KV + Graph + Time-Series)
 ```
 
 ## Feature Matrix
-- **Hybrid VDB**: SQL tables, JSONB docs, vector embeddings, KV store, graph edges, time-series metrics.
-- **Universal Ingestion Engine**: auto-detects JSON/CSV/XLSX/Parquet/SQL/PDF/log/binary → schema synth → engine selection → indexing.
-- **Semantic Kernels**:
-  - VASVELVOGVEG: deterministic candidate selection, ledger commit.
-  - VAR: virtual energy tracker (per project).
-  - VARVQCQC: query rewrite + correction metadata.
-  - DAI: Developmental AI growth loop (cache/index hints learned from history).
-- **MCP Orchestration**: tool registry (`db.query`, `kernel.*`, `uie.ingestFile`, etc.), contexts, event bus, optional WebSocket `/events`.
-- **Multi-Tenant Control Plane**: Organizations → Projects → API Keys; per-project scoping for ledger, ingestion, metrics.
-- **Telemetry**: `/metrics` snapshot, WebSocket events (`ingest.completed`, `query.executed`, `kernel.energyUpdated`, `dai.updateSuggested`).
-- **Headless Landing**: `GET /` serves a Tailwind-based quickstart card; `GET /info` exposes JSON metadata.
+- **Hybrid VDB**: SQL tables, JSONB docs, vector embeddings (`pgvector`), KV store, graph edges, basic time-series.
+- **Universal Ingestion Engine (UIE)**: Accepts JSON, CSV, XLSX, Parquet, SQL dumps, PDFs, logs, binaries; auto-detects format + schema and materializes into VDB.
+- **Kernels**:
+  - **VASVELVOGVEG** – deterministic planning with Truth Ledger logging.
+  - **VAR** – per-project virtual energy tracker (informs throttles + telemetry).
+  - **VARVQCQC** – query corrector with transparent metadata.
+  - **DAI** – Developmental AI growth state (cache TTL/index hints). *It never rewrites SQL—only tunes heuristics and metrics.*
+- **MCP orchestration**: Tool registry (`db.query`, `uie.ingestFile`, `kernel.*`, `dai.state`), session contexts, event bus, optional WebSocket streaming.
+- **Multi-tenant control plane**: Organizations → Projects → API keys, plus waitlist + admin provisioning endpoints.
+- **Docs landing**: `GET /` renders a Tailwind handbook with headers, quickstart steps, and curl snippets; `/info` exposes the same as JSON.
 
-## Authentication & Access
-- **API keys**: send `X-VOIKE-API-Key` with every protected request.
-- **Admin token**: provisioning endpoints require `X-VOIKE-ADMIN-TOKEN` (set via `ADMIN_TOKEN` env). Used to manage orgs/projects/keys and approve waitlist entries.
-- **Waitlist flow**: `POST /waitlist` (no auth) captures emails. Admin approves via `POST /admin/waitlist/:id/approve`, which provisions an organization, project, and API key automatically.
-- External portals can wrap these endpoints to build login/signup/approval UX without modifying this backend.
+## Multi-Tenant Access Model
+1. **Waitlist** – `POST /waitlist` captures email/name (no auth). Admins list + approve entries.
+2. **Admin token** – All provisioning endpoints require `X-VOIKE-ADMIN-TOKEN` (`ADMIN_TOKEN` env).
+3. **Organizations & projects** – Approvals (or direct admin calls) mint orgs + projects.
+4. **API keys** – `X-VOIKE-API-Key` authenticates ingestion/query/MCP endpoints. Projects can hold multiple keys (e.g., prod vs. staging).
+5. **Playground key (optional)** – Set `PLAYGROUND_API_KEY` to auto-create a demo project/key that appears on `/` + `/info`. Use that for docs, a public playground, or sample SDKs.
 
-## Quickstart Handbook
-1. **Clone & install deps (for lint/test)**  
+Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemetry events) are all tagged with `project_id`, so multi-tenant isolation is enforced server-side.
+
+> Waitlist approvals do **not** create end-user passwords or logins. When an admin (or your provisioning portal) calls `POST /admin/waitlist/:id/approve`, the backend automatically mints the organization, project, and API key for that builder. Share the API key (or surface it in your UI) and they can immediately call ingestion/query endpoints—no additional password ceremony required.
+
+## Quickstart Handbook (8 Steps)
+1. **Clone + install (for lint/tests only)**  
    ```bash
    git clone https://github.com/Rishhhhh/voike.git
    cd voike
@@ -43,79 +47,89 @@ Hybrid VDB (SQL + Document + Vector + KV + Graph + Time-Series)
    ```
 2. **Configure environment**  
    Copy `.env.example` → `.env` and update:
-   ```
+   ```env
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/voikex
-   ADMIN_TOKEN=super-secret
+   ADMIN_TOKEN=super-secret-admin
+   PLAYGROUND_API_KEY=voike-playground-demo   # optional but great for docs/testing
    ```
-3. **Bring up the stack** (backend + Postgres + pgvector):  
+3. **Run with Docker Compose** (no local Node/npm needed afterwards):  
    ```bash
    docker compose up -d --build
    ```
-   API lives at `http://localhost:8080`.
-4. **Provision org + project + API key**  
+   - `postgres_data` volume keeps data between restarts.  
+   - Containers use `restart: unless-stopped`, so they come back after host reboots. If you nuke volumes (`docker compose down -v`), you wipe the DB.
+4. **Join waitlist or skip straight to admin provisioning**  
    ```bash
+   curl -X POST http://localhost:8080/waitlist \
+     -H 'content-type: application/json' \
+     -d '{ "email": "founder@example.com", "name": "Ada" }'
+   # or mint immediately
    curl -X POST http://localhost:8080/admin/projects \
      -H 'content-type: application/json' \
-     -H 'x-voike-admin-token: super-secret' \
-     -d '{"projectName":"demo","organizationName":"acme","keyLabel":"primary"}'
+     -H 'x-voike-admin-token: super-secret-admin' \
+     -d '{ "projectName":"demo","organizationName":"acme","keyLabel":"primary" }'
    ```
-   Save `apiKey.key` from the response.
-5. **Exercise the API**  
+5. **Capture the API key** – Response includes `project.id` + `apiKey.key`. Supply that value as `X-VOIKE-API-Key` on every protected request (or set `VOIKE_API_KEY` env for scripts).
+6. **Exercise the backend**  
    ```bash
    VOIKE_API_KEY=<key> VOIKE_BASE_URL=http://localhost:8080 npm run regression
-   VOIKE_API_KEY=<key> VOIKE_BASE_URL=http://localhost:8080 python3 scripts/test.py
    ```
-6. **Monitor**  
-   - `GET /kernel/state` → virtual energy + DAI state.  
-   - `GET /metrics` → last gauges.  
-   - WebSocket `GET /events` with `X-VOIKE-API-Key` to stream ingest/query/kernel events.
-7. **Deploy**  
-   - Push to your edge host, `git pull`, `docker compose up -d --build`.  
-   - Point Cloudflare (or another L7 proxy) at port 8080 for the public domain.
-8. **Extend**  
-   Build your own landing page / dashboard that calls these APIs (waitlist signup, admin approvals, ingestion dashboards). No changes needed on this backend.
+   The regression script ingests a CSV, waits for `/ingest/{jobId}`, fires `/query`, and checks `/kernel/state` + `/ledger/recent`.
+7. **Inspect telemetry**  
+   - `curl -H "x-voike-api-key: <key>" http://localhost:8080/metrics`  
+   - WebSocket `/events` (send the same header) to stream `ingest.*`, `query.*`, `kernel.energyUpdated`, `dai.updateSuggested`.
+8. **Deploy/refresh on your edge server**  
+   ```bash
+   cd /root/voike
+   git fetch origin
+   git reset --hard origin/main
+   docker compose down
+   docker compose up -d --build
+   ```
+   Data remains intact because Postgres uses a named volume. If you need HA, run multiple VOIKE containers (voike1/voike2) behind a load balancer that points at a replicated Postgres (managed HA, Patroni, or Galera-compatible setup).
 
-## Developer Playground Scripts
-- `npm run regression` (requires `VOIKE_API_KEY`, optional `VOIKE_BASE_URL`): uploads sample CSV, polls `/ingest/{job}`, hits `/query`, `/kernel/state`, `/ledger/recent`.
-- `scripts/test.py`: ensures `users_demo` table exists, inserts hash rows, queries them.
-- `scripts/query.py`: read-only demo query.
-- `npm run seed`: CSV ingestion via UIE module (default project).
-- `npm test`: Jest suite covering kernels, ingestion, VDB, auth gating.
+## API Surface & Docs
+- `docs/api.md` – full endpoint breakdown, curl snippets, auth model.
+- `docs/kernels.md` – kernel math + behavioral notes.
+- `docs/openapi.yaml` – machine-readable schema for codegen.
+- `GET /` – Tailwind landing page (embed in docs portals or show as-is).  
+  `GET /info` – same payload in JSON for CLI/SDK.
 
-## Primary API Groups
-### Public
-- `GET /` – Tailwind quickstart card.  
-- `GET /info` – JSON payload describing headers + endpoints.  
-- `GET /health` – system check.  
-- `POST /waitlist` – add email/name to the early-access queue.
+## Testing & Tooling
+- `npm test` – Jest coverage for kernels, UIE, VDB, and end-to-end ingestion flow (uses a MockPool).
+- `npm run regression` – Hits the live HTTP API (requires `VOIKE_API_KEY`).
+- `npm run seed` – Quick ingestion of a CSV into the default playground project (runs migrations + ensures auth tables).
+- CI tip: run `npm run lint` (aka `tsc --noEmit`) before building Docker to catch type drift.
 
-### Admin (header `X-VOIKE-ADMIN-TOKEN`)
-- `GET /admin/waitlist`, `POST /admin/waitlist/:id/approve`
-- `GET/POST /admin/organizations`
-- `POST /admin/projects`, `POST /admin/organizations/:orgId/projects`
-- `POST /admin/projects/:projectId/api-keys`
+## Kernel Primer (Why DAI Exists)
+- **VASVELVOGVEG**: Scores candidate plans, gates risky options, logs decisions to the Truth Ledger, and bumps VAR energy.
+- **VAR**: Virtual energy accumulator that feeds into throttling and provides health telemetry.
+- **VARVQCQC**: Lightweight heuristics that annotate queries (`SELECT *` warnings, semanticText fallbacks). No black-box rewrites.
+- **DAI**: Watches runtime metrics + Kernel9 hints to suggest cache TTL/index/cost adjustments per project. *It does not mutate SQL – it only updates advisory state and emits `dai.updateSuggested` events.*
 
-### Project (header `X-VOIKE-API-Key`)
-- Ingestion: `POST /ingest/file`, `GET /ingest/{jobId}`.
-- Query: `POST /query` (sql/semantic/hybrid).
-- Kernels & Ledger: `GET /kernel/state`, `GET /ledger/recent`, `GET /ledger/:id`.
-- MCP: `GET /mcp/tools`, `POST /mcp/execute`.
-- Telemetry: `GET /metrics`, WebSocket `/events`.
+## Operating Notes
+- **CORS**: Enabled for all origins by default (Fastify CORS plugin). If a frontend can’t reach the API, double-check it sends `X-VOIKE-API-Key` and that the browser allows custom headers.
+- **Admin portal expectations**: There is no `/login` page—your frontend should hit `/waitlist`, `/admin/*`, etc., and simply supply the admin token. A “login form” typically just collects email/password and converts it into the header (or uses a secret manager).
+- **Playground experiences**: Create a dedicated “Playground” project/key and surface it in docs so people can try `/query` immediately without provisioning.
+- **HA & resilience**: Docker Compose is single-node; to avoid a single edge outage, run multiple nodes (voike1, voike2, …) pointing to a shared HA Postgres. Use Cloudflare LB / Nginx / HAProxy so `voike.supremeuf.com` survives node loss. Docker itself isn’t clustered—tools like Nomad, Kubernetes, or Docker Swarm can keep multiple VOIKE containers alive while corosync/Patroni handle database replication.
+- **Upgrades**: Follow the `git fetch && git reset --hard origin/main && docker compose up -d --build` flow. Postgres volume keeps Truth Ledger + ingestion data safe.
 
-Full schemas + sample payloads live in `docs/api.md` and `docs/openapi.yaml`.
+## Build Your Own Portal
+Because this repo ships **only** the backend, any UI (marketing site, admin console, docs playground) is expected to call these APIs:
+1. Public landing → embed `/` (or fetch `/info`).
+2. Waitlist form → `POST /waitlist`.
+3. Admin review console → `GET /admin/waitlist`, approve entries, mint orgs/projects/keys.
+4. Project dashboard → show ingestion jobs, kernel state, ledger, metrics via the API key.
 
-## Deployment & Ops
-- **Data persistence**: `postgres_data` Docker volume. Avoid `docker compose down -v` unless you intend to wipe data.
-- **Scaling & HA**:
-  - Run multiple VOIKE containers (voike1, voike2) pointing to a shared HA Postgres (managed instance, Patroni, etc.).
-  - Put Cloudflare Load Balancer (or any L7 LB) in front of them; clients keep using `voike.supremeuf.com`.
-  - The API key + per-project scoping make horizontal scaling stateless at the app layer.
-- **Configuration**: set env vars for kernel hyperparameters, query limits, telemetry toggle, websocket enablement, admin token.
+You can use Next.js, Start UI, or any static site generator. Just remember: for admin/provisioning, set the `X-VOIKE-ADMIN-TOKEN` header; for project APIs, use the project’s `X-VOIKE-API-Key`. CORS is already open, so browser-based tooling works out of the box.
 
-## Next Steps / Ideas
-- Build a lightweight admin portal wrapping the existing waitlist/org/project endpoints (e.g., Next.js + Tailwind).
-- Add CLI/SDKs (TypeScript, Python) that wrap `ingest`/`query` for developer onboarding.
-- Add HA Postgres replication and metric shipping to a time-series system for production-grade observability.
-- Extend MCP tools for remote job scheduling (compute/grid plugins) if needed.
+## Troubleshooting
+| Symptom | Fix |
+| --- | --- |
+| `{"message":"Route GET:/ not found"}` | You hit the backend before deploying this version. Redeploy so `/` serves the landing page. |
+| `Cannot connect... CORS issue` | Ensure your frontend sends `X-VOIKE-API-Key` (and `content-type`), or test with curl/Postman to confirm. |
+| Admin panel says `/admin/waitlist` missing | Endpoint exists – make sure the request includes the admin token header and you’re pointing at the correct domain/port. |
+| `FST_ERR_PLUGIN_VERSION_MISMATCH` | Use Fastify v4-compatible plugins (already pinned). Remove globally installed Fastify types if they force v5. |
+| Containers disappear after reboot | Compose services already use `restart: unless-stopped`. Run `docker compose up -d` once per boot if needed; never remove the named volume unless you intend to wipe data. |
 
-For mathematical details, see `docs/kernels.md`. For endpoint specifics—including JSON contracts, curl samples, and MCP payloads—see `docs/api.md`.
+With these pieces in place, VOIKE-X is ready for your external builder to craft marketing sites, admin portals, or SDKs while this repo remains a lean, production-grade backend engine.
