@@ -33,6 +33,13 @@ export type ProjectRecord = {
   ownerUserId?: string | null;
 };
 
+export type ProjectWithMeta = ProjectRecord & {
+  organizationName?: string | null;
+  apiKey?: string | null;
+  apiKeyLabel?: string | null;
+  createdAt?: Date;
+};
+
 export type ApiKeyRecord = {
   id: string;
   projectId: string;
@@ -540,12 +547,45 @@ export const approveWaitlistEntry = async (
   return { entry: updated.rows[0], organization, project, apiKey, user };
 };
 
-export const listProjectsByUser = async (pool: Pool, userId: string): Promise<ProjectRecord[]> => {
+export const listProjectsByUser = async (
+  pool: Pool,
+  userId: string,
+): Promise<ProjectWithMeta[]> => {
   const { rows } = await pool.query(
-    `SELECT id, name, organization_id, owner_user_id FROM projects WHERE owner_user_id = $1 ORDER BY created_at DESC`,
+    `
+      SELECT
+        p.id,
+        p.name,
+        p.organization_id,
+        p.owner_user_id,
+        p.created_at,
+        org.name AS organization_name,
+        ak.key AS api_key,
+        ak.label AS api_key_label
+      FROM projects p
+      LEFT JOIN organizations org ON p.organization_id = org.id
+      LEFT JOIN LATERAL (
+        SELECT key, label
+        FROM api_keys
+        WHERE project_id = p.id
+        ORDER BY created_at ASC
+        LIMIT 1
+      ) ak ON true
+      WHERE p.owner_user_id = $1
+      ORDER BY p.created_at DESC
+    `,
     [userId],
   );
-  return rows.map(mapProjectRow);
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    organizationId: row.organization_id,
+    ownerUserId: row.owner_user_id,
+    organizationName: row.organization_name ?? null,
+    apiKey: row.api_key ?? null,
+    apiKeyLabel: row.api_key_label ?? null,
+    createdAt: row.created_at,
+  }));
 };
 
 export const verifyProjectOwnership = async (
