@@ -1,4 +1,5 @@
 import Fastify, { FastifyInstance, FastifyBaseLogger } from 'fastify';
+import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import { Pool } from 'pg';
@@ -33,6 +34,18 @@ export type ApiDeps = {
 
 export const buildServer = ({ pool, vdb, uie, tools, dai }: ApiDeps): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
+
+  app.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'X-VOIKE-API-Key',
+      'X-VOIKE-ADMIN-TOKEN',
+      'Authorization',
+    ],
+    credentials: false,
+  });
 
   app.register(multipart);
   if (config.enableWebsocket) {

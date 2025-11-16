@@ -1,88 +1,121 @@
 # VOIKE-X Backend
 
-VOIKE-X is a kernel-aware, MCP-native backend that fuses hybrid database engines, deterministic + adaptive kernels, and a universal ingestion pipeline. There is no GUI; everything is exposed through HTTP APIs, optional WebSocket events, and MCP tools.
+VOIKE-X is a headless, MCP-native database engine that fuses hybrid Postgres/pgvector storage, universal ingestion, and transparent semantic kernels. There is **no GUI** baked in—developers interact entirely through HTTP, WebSocket, CLI scripts, or their own UIs.
 
 ```
-Clients -> API Layer -> MCP Orchestration -> Kernels -> VDB -> Postgres
-             |                |               |         |
-             |                |               |         +-> Truth Ledger / VAR energy
-             |                |               +-> Kernel-8/9 + Semantic Ops
-             |                +-> Tool registry / contexts / events
-             +-> UIE -> Schema Synth -> Engine selection -> Indexing
+Clients / CLI / SDK
+        │
+        ▼
+HTTP API + MCP Tools ──► Kernels (VASVEL / VAR / VARVQCQC / DAI)
+        │                                 │
+        │                                 └────► Truth Ledger (per project)
+        ▼
+Hybrid VDB (SQL + Document + Vector + KV + Graph + Time-Series)
+        │
+        └────► Postgres + pgvector
 ```
 
-## Features
-- Hybrid VDB spanning SQL, document, vector, KV, graph, and time-series tables.
-- Kernel-8 deterministic hints + Kernel-9 adaptive intelligence with Developmental AI growth loops.
-- Semantic kernel implementations (VASVELVOGVEG, VAR, VARVQCQC, DAI) with Truth Ledger logging.
-- Universal Ingestion Engine with format detection, schema synthesis, and engine selection.
-- MCP tool registry covering DB, ingestion, and kernel utilities.
-- Structured telemetry, metrics endpoint, and optional WebSocket event stream.
+## Feature Matrix
+- **Hybrid VDB**: SQL tables, JSONB docs, vector embeddings, KV store, graph edges, time-series metrics.
+- **Universal Ingestion Engine**: auto-detects JSON/CSV/XLSX/Parquet/SQL/PDF/log/binary → schema synth → engine selection → indexing.
+- **Semantic Kernels**:
+  - VASVELVOGVEG: deterministic candidate selection, ledger commit.
+  - VAR: virtual energy tracker (per project).
+  - VARVQCQC: query rewrite + correction metadata.
+  - DAI: Developmental AI growth loop (cache/index hints learned from history).
+- **MCP Orchestration**: tool registry (`db.query`, `kernel.*`, `uie.ingestFile`, etc.), contexts, event bus, optional WebSocket `/events`.
+- **Multi-Tenant Control Plane**: Organizations → Projects → API Keys; per-project scoping for ledger, ingestion, metrics.
+- **Telemetry**: `/metrics` snapshot, WebSocket events (`ingest.completed`, `query.executed`, `kernel.energyUpdated`, `dai.updateSuggested`).
+- **Headless Landing**: `GET /` serves a Tailwind-based quickstart card; `GET /info` exposes JSON metadata.
 
-## Getting Started
+## Authentication & Access
+- **API keys**: send `X-VOIKE-API-Key` with every protected request.
+- **Admin token**: provisioning endpoints require `X-VOIKE-ADMIN-TOKEN` (set via `ADMIN_TOKEN` env). Used to manage orgs/projects/keys and approve waitlist entries.
+- **Waitlist flow**: `POST /waitlist` (no auth) captures emails. Admin approves via `POST /admin/waitlist/:id/approve`, which provisions an organization, project, and API key automatically.
+- External portals can wrap these endpoints to build login/signup/approval UX without modifying this backend.
 
-### Prerequisites
-- Node.js 18+
-- Postgres 15+ with the `vector` extension (pgvector)
-
-### Install
-```bash
-npm install
-```
-
-### Local Development
-1. Copy `.env.example` to `.env` and set `DATABASE_URL`.
-2. Run migrations + dev server:
+## Quickstart Handbook
+1. **Clone & install deps (for lint/test)**  
    ```bash
-   npm run dev
+   git clone https://github.com/Rishhhhh/voike.git
+   cd voike
+   npm install
    ```
-3. In another terminal, you can seed sample data:
+2. **Configure environment**  
+   Copy `.env.example` → `.env` and update:
+   ```
+   DATABASE_URL=postgres://postgres:postgres@localhost:5432/voikex
+   ADMIN_TOKEN=super-secret
+   ```
+3. **Bring up the stack** (backend + Postgres + pgvector):  
    ```bash
-   npm run seed
+   docker compose up -d --build
    ```
+   API lives at `http://localhost:8080`.
+4. **Provision org + project + API key**  
+   ```bash
+   curl -X POST http://localhost:8080/admin/projects \
+     -H 'content-type: application/json' \
+     -H 'x-voike-admin-token: super-secret' \
+     -d '{"projectName":"demo","organizationName":"acme","keyLabel":"primary"}'
+   ```
+   Save `apiKey.key` from the response.
+5. **Exercise the API**  
+   ```bash
+   VOIKE_API_KEY=<key> VOIKE_BASE_URL=http://localhost:8080 npm run regression
+   VOIKE_API_KEY=<key> VOIKE_BASE_URL=http://localhost:8080 python3 scripts/test.py
+   ```
+6. **Monitor**  
+   - `GET /kernel/state` → virtual energy + DAI state.  
+   - `GET /metrics` → last gauges.  
+   - WebSocket `GET /events` with `X-VOIKE-API-Key` to stream ingest/query/kernel events.
+7. **Deploy**  
+   - Push to your edge host, `git pull`, `docker compose up -d --build`.  
+   - Point Cloudflare (or another L7 proxy) at port 8080 for the public domain.
+8. **Extend**  
+   Build your own landing page / dashboard that calls these APIs (waitlist signup, admin approvals, ingestion dashboards). No changes needed on this backend.
 
-### Docker
-Build and run with Docker Compose (includes Postgres):
-```bash
-docker compose up --build
-```
-The API listens on `http://localhost:8080`.
+## Developer Playground Scripts
+- `npm run regression` (requires `VOIKE_API_KEY`, optional `VOIKE_BASE_URL`): uploads sample CSV, polls `/ingest/{job}`, hits `/query`, `/kernel/state`, `/ledger/recent`.
+- `scripts/test.py`: ensures `users_demo` table exists, inserts hash rows, queries them.
+- `scripts/query.py`: read-only demo query.
+- `npm run seed`: CSV ingestion via UIE module (default project).
+- `npm test`: Jest suite covering kernels, ingestion, VDB, auth gating.
 
-### Key Scripts
-- `npm run dev` – Fastify server with hot reload.
-- `npm run build` – Compile TypeScript to `dist/`.
-- `npm test` – Run Jest suite (kernels, UIE, VDB, ingestion flow).
-- `npm run seed` – Ingests a sample CSV via the UIE pipeline.
+## Primary API Groups
+### Public
+- `GET /` – Tailwind quickstart card.  
+- `GET /info` – JSON payload describing headers + endpoints.  
+- `GET /health` – system check.  
+- `POST /waitlist` – add email/name to the early-access queue.
 
-## API Highlights
-- `GET /health` – status, DB clock, kernel energy.
-- `POST /ingest/file` – multipart upload, triggers UIE pipeline.
-- `GET /ingest/:jobId` – ingestion job status + summary.
-- `POST /query` – accepts `VDBQuery`, routes through VARVQCQC + VASVEL.
-- `GET /kernel/state` – hyperparameters, VAR energy, DAI state.
-- `GET /ledger/*` – inspect Truth Ledger entries.
-- `GET /mcp/tools` / `POST /mcp/execute` – MCP registry access.
-- `GET /metrics` – JSON snapshot of gauges/counters.
-- `GET /events` (optional WebSocket) – ingest/query/kernel events.
+### Admin (header `X-VOIKE-ADMIN-TOKEN`)
+- `GET /admin/waitlist`, `POST /admin/waitlist/:id/approve`
+- `GET/POST /admin/organizations`
+- `POST /admin/projects`, `POST /admin/organizations/:orgId/projects`
+- `POST /admin/projects/:projectId/api-keys`
 
-Detailed payloads and examples live in `docs/api.md` and `docs/openapi.yaml`.
+### Project (header `X-VOIKE-API-Key`)
+- Ingestion: `POST /ingest/file`, `GET /ingest/{jobId}`.
+- Query: `POST /query` (sql/semantic/hybrid).
+- Kernels & Ledger: `GET /kernel/state`, `GET /ledger/recent`, `GET /ledger/:id`.
+- MCP: `GET /mcp/tools`, `POST /mcp/execute`.
+- Telemetry: `GET /metrics`, WebSocket `/events`.
 
-## Architecture Notes
-- **API Layer**: Fastify + Zod validation, WebSocket events, telemetry counters.
-- **MCP Layer**: Tool registry bridging DB, ingestion, kernels, and growth state operations.
-- **VDB Layer**: Postgres pool with vector/doc/graph helpers and hybrid query orchestration.
-- **Kernels**: VASVEL (semantic gating), VAR (energy), VARVQCQC (query correction), DAI (growth loop) with tests.
-- **UIE**: Format detection, parser modules (JSON/CSV/XLSX/Parquet/SQL/log/PDF/binary), schema synthesis, and engine selection heuristics.
-- **Telemetry/Ops**: Pino logging, metric collector, Truth Ledger persistence.
+Full schemas + sample payloads live in `docs/api.md` and `docs/openapi.yaml`.
 
-## Deployment
-- Configure environment via `DATABASE_URL`, `PORT`, and kernel hyperparameters (`KERNEL_ALPHA`, etc.).
-- Use Docker Compose or your platform of choice to run `docker-compose.yml`.
-- Lovable.dev compatible: point `DATABASE_URL` to the managed Postgres instance and deploy with `npm run build && npm start`.
+## Deployment & Ops
+- **Data persistence**: `postgres_data` Docker volume. Avoid `docker compose down -v` unless you intend to wipe data.
+- **Scaling & HA**:
+  - Run multiple VOIKE containers (voike1, voike2) pointing to a shared HA Postgres (managed instance, Patroni, etc.).
+  - Put Cloudflare Load Balancer (or any L7 LB) in front of them; clients keep using `voike.supremeuf.com`.
+  - The API key + per-project scoping make horizontal scaling stateless at the app layer.
+- **Configuration**: set env vars for kernel hyperparameters, query limits, telemetry toggle, websocket enablement, admin token.
 
-## Next Steps
-- Extend MCP tools for remote edge functions.
-- Add CLI client or UI that consumes `/query` + `/events`.
-- Layer in auth/tenant boundaries around contexts.
+## Next Steps / Ideas
+- Build a lightweight admin portal wrapping the existing waitlist/org/project endpoints (e.g., Next.js + Tailwind).
+- Add CLI/SDKs (TypeScript, Python) that wrap `ingest`/`query` for developer onboarding.
+- Add HA Postgres replication and metric shipping to a time-series system for production-grade observability.
+- Extend MCP tools for remote job scheduling (compute/grid plugins) if needed.
 
-Refer to `docs/kernels.md` for mathematical grounding and to `docs/api.md` for interaction recipes.
+For mathematical details, see `docs/kernels.md`. For endpoint specifics—including JSON contracts, curl samples, and MCP payloads—see `docs/api.md`.
