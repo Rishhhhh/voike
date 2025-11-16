@@ -105,6 +105,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
 - `npm test` – Jest coverage for kernels, UIE, VDB, and end-to-end ingestion flow (uses a MockPool).
 - `npm run regression` – Hits the live HTTP API (requires `VOIKE_API_KEY`).
 - `npm run seed` – Quick ingestion of a CSV into the default playground project (runs migrations + ensures auth tables).
+- `python scripts/voike_regression.py` – Python-based smoke test that exercises `/health`, `/ingest/*`, `/query`, `/kernel/state`, `/ledger/recent`, `/metrics`, `/mcp/*`, and an arbitrary Fibonacci SQL query (reads `VOIKE_API_KEY`, `VOIKE_BASE_URL`).
 - CI tip: run `npm run lint` (aka `tsc --noEmit`) before building Docker to catch type drift.
 
 ## Kernel Primer (Why DAI Exists)
