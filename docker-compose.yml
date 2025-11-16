@@ -2,10 +2,13 @@ version: '3.9'
 services:
   postgres:
     image: ankane/pgvector:latest
+    privileged: true
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: voikex
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     ports:
       - '5432:5432'
     healthcheck:
@@ -13,14 +16,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     build: .
+    privileged: true
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/voikex
       PORT: 8080
+      ADMIN_TOKEN: super-secret
+      KERNEL_ALPHA: 0.7
+      KERNEL_BETA: 0.4
+      KERNEL_GAMMA: 0.6
+      KERNEL_LAMBDA: 0.3
+      QUERY_MAX_ROWS: 5000
+      QUERY_TIMEOUT_MS: 15000
+      WS_ENABLED: 'true'
+      TELEMETRY_ENABLED: 'true'
     ports:
       - '8080:8080'
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
