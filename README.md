@@ -48,7 +48,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
    npm install
    ```
 2. **Configure environment**  
-   Copy `.env.example` → `.env` and update:
+   A ready-to-use `.env` ships with the repo (mirrors `.env.example`). Update values if needed:
    ```env
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/voikex
    ADMIN_TOKEN=voike-admin-5bb6c26f3a89441f8fbf95c7088795e4
@@ -56,6 +56,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
    JWT_SECRET=voike-jwt-2f7c4b4d2d2d4e0aa7c6ef379245a80e
    JWT_TTL_SECONDS=86400
    ```
+   For machine-specific overrides create `.env.local` (git-ignored); Compose loads `.env` automatically so no manual copy step.
 3. **Run with Docker Compose** (no local Node/npm needed afterwards):  
    ```bash
    docker compose up -d --build
