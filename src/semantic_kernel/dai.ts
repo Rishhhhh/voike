@@ -23,6 +23,15 @@ export class DAIEngine {
         state JSONB NOT NULL
       );`,
     );
+    await this.pool.query(`ALTER TABLE growth_state ADD COLUMN IF NOT EXISTS project_id UUID;`);
+    await this.pool.query(`UPDATE growth_state SET project_id = COALESCE(project_id, $1)`, [
+      DEFAULT_PROJECT_ID,
+    ]);
+    await this.pool.query(`ALTER TABLE growth_state DROP CONSTRAINT IF EXISTS growth_state_pkey;`);
+    await this.pool.query(
+      `ALTER TABLE growth_state ADD CONSTRAINT growth_state_pkey PRIMARY KEY (project_id);`,
+    );
+    await this.pool.query(`ALTER TABLE growth_state DROP COLUMN IF EXISTS id;`);
     await this.pool.query(
       `INSERT INTO growth_state (project_id, state) VALUES ($1, $2)
        ON CONFLICT (project_id) DO NOTHING`,
