@@ -152,6 +152,13 @@ def run_regression(args: argparse.Namespace) -> None:
 
     ledger = request("GET", "/ledger/recent")
     print(f"Ledger entries fetched: {len(ledger)}")
+    if ledger:
+        entry_id = ledger[0].get("id")
+        if entry_id:
+            detail = request("GET", f"/ledger/{entry_id}")
+            if detail.get("id") != entry_id:
+                raise RuntimeError("Ledger detail lookup mismatch.")
+            print("Ledger detail lookup successful for entry:", entry_id)
 
     metrics = request("GET", "/metrics")
     print("Metrics keys:", list(metrics.keys()))
@@ -165,10 +172,29 @@ def run_regression(args: argparse.Namespace) -> None:
             {"query": {"kind": "sql", "sql": "SELECT 42 AS answer"}},
         )
         print("MCP db.query result:", mcp_result)
+    if "kernel.getEnergy" in tool_names:
+        energy = mcp_execute("kernel.getEnergy", {})
+        print("MCP kernel.getEnergy result:", energy)
 
     if args.fibonacci:
         fib_val = run_fibonacci_sql(args.fibonacci)
         print(f"fib({args.fibonacci}) =", fib_val)
+
+    # Security regression: missing API key should 401.
+    resp = requests.get(f"{BASE_URL}/kernel/state", timeout=10)
+    if resp.status_code != 401:
+        raise RuntimeError(f"Expected 401 for missing API key, got {resp.status_code}")
+    print("Unauthorized access correctly rejected (401).")
+
+    # Optional admin checks
+    if ADMIN_TOKEN:
+        admin_headers = {"x-voike-admin-token": ADMIN_TOKEN}
+        waitlist = request(
+            "GET", "/admin/waitlist", headers=admin_headers, auth_required=False
+        )
+        print("Admin waitlist entries:", len(waitlist))
+    else:
+        print("Skipping admin checks (VOIKE_ADMIN_TOKEN not set).")
 
     print("Python regression completed successfully ✅")
 
