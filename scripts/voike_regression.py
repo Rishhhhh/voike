@@ -32,6 +32,18 @@ CSV_SAMPLE = """id,name,score
 """
 
 
+def banner(title: str) -> None:
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+
+
+def report(step: str, status: str = "OK", detail: Optional[str] = None) -> None:
+    print(f"[{status}] {step}")
+    if detail:
+        print(f"    {detail}")
+
+
 def request(
     method: str,
     path: str,
@@ -109,19 +121,20 @@ def mcp_execute(name: str, input_payload: Dict[str, Any]) -> Any:
 
 
 def run_regression(args: argparse.Namespace) -> None:
-    print(f"Running regression against {BASE_URL}")
+    banner(f"VOIKE-X regression against {BASE_URL}")
 
     # Health + info
     health = request("GET", "/health", auth_required=False)
-    print("Health:", health)
+    report("Health", detail=str(health))
     info = request("GET", "/info", auth_required=False)
-    print("Available endpoints:", list(info.get("endpoints", {}).keys()))
+    report("Available endpoints", detail=str(list(info.get("endpoints", {}).keys())))
 
     kernel_state = request("GET", "/kernel/state")
-    print("Kernel state:", kernel_state)
+    report("Kernel state", detail=str(kernel_state))
 
     # Ingestion
-    print("Uploading sample CSV via /ingest/file …")
+    banner("Ingestion + Query Pipeline")
+    report("Uploading sample CSV via /ingest/file …")
     files = {
         "file": ("regression.csv", CSV_SAMPLE.encode("utf-8"), "text/csv"),
     }
@@ -129,12 +142,12 @@ def run_regression(args: argparse.Namespace) -> None:
         "POST", "/ingest/file", files=files, auth_required=True, headers={}
     )
     job_id = ingest_resp["jobId"]
-    print("Ingest accepted:", ingest_resp)
+    report("Ingest accepted", detail=str(ingest_resp))
     job = wait_for_ingest(job_id)
     if job.get("status") != "completed":
         raise RuntimeError(f"Ingest job ended in unexpected state: {job}")
     summary = job.get("summary", {})
-    print("Ingest summary:", summary)
+    report("Ingest summary", detail=str(summary))
 
     # Query the ingested table
     table = summary.get("table")
@@ -147,44 +160,45 @@ def run_regression(args: argparse.Namespace) -> None:
         "filters": {"entity_type": "profile"},
     }
     query_result = request("POST", "/query", json=query_payload)
-    print("Hybrid query meta:", query_result.get("meta"))
-    print("Hybrid query rows:", query_result.get("rows"))
+    report("Hybrid query meta", detail=str(query_result.get("meta")))
+    report("Hybrid query rows", detail=str(query_result.get("rows")))
 
     ledger = request("GET", "/ledger/recent")
-    print(f"Ledger entries fetched: {len(ledger)}")
+    report("Ledger entries", detail=str(len(ledger)))
     if ledger:
         entry_id = ledger[0].get("id")
         if entry_id:
             detail = request("GET", f"/ledger/{entry_id}")
             if detail.get("id") != entry_id:
                 raise RuntimeError("Ledger detail lookup mismatch.")
-            print("Ledger detail lookup successful for entry:", entry_id)
+            report("Ledger detail lookup", detail=f"id={entry_id}")
 
     metrics = request("GET", "/metrics")
-    print("Metrics keys:", list(metrics.keys()))
+    report("Metrics keys", detail=str(list(metrics.keys())))
 
     tools = request("GET", "/mcp/tools")
     tool_names = [tool["name"] for tool in tools]
-    print("Registered MCP tools:", tool_names)
+    report("MCP tools", detail=str(tool_names))
     if "db.query" in tool_names:
         mcp_result = mcp_execute(
             "db.query",
             {"query": {"kind": "sql", "sql": "SELECT 42 AS answer"}},
         )
-        print("MCP db.query result:", mcp_result)
+        report("MCP db.query", detail=str(mcp_result))
     if "kernel.getEnergy" in tool_names:
         energy = mcp_execute("kernel.getEnergy", {})
-        print("MCP kernel.getEnergy result:", energy)
+        report("MCP kernel.getEnergy", detail=str(energy))
 
     if args.fibonacci:
+        banner("Fibonacci SQL")
         fib_val = run_fibonacci_sql(args.fibonacci)
-        print(f"fib({args.fibonacci}) =", fib_val)
+        report(f"fib({args.fibonacci})", detail=fib_val)
 
     # Security regression: missing API key should 401.
     resp = requests.get(f"{BASE_URL}/kernel/state", timeout=10)
     if resp.status_code != 401:
         raise RuntimeError(f"Expected 401 for missing API key, got {resp.status_code}")
-    print("Unauthorized access correctly rejected (401).")
+    report("Unauthorized access check", detail="401 as expected")
 
     # Optional admin checks
     if ADMIN_TOKEN:
@@ -192,11 +206,11 @@ def run_regression(args: argparse.Namespace) -> None:
         waitlist = request(
             "GET", "/admin/waitlist", headers=admin_headers, auth_required=False
         )
-        print("Admin waitlist entries:", len(waitlist))
+        report("Admin waitlist entries", detail=str(len(waitlist)))
     else:
-        print("Skipping admin checks (VOIKE_ADMIN_TOKEN not set).")
+        report("Admin checks", status="SKIP", detail="VOIKE_ADMIN_TOKEN not set")
 
-    print("Python regression completed successfully ✅")
+    banner("Python regression completed successfully ✅")
 
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
