@@ -37,7 +37,21 @@ Returns `{ "status": "pending", "entry": {...} }`. Duplicate emails just refresh
 | `POST` | `/admin/organizations/{orgId}/projects` | `{ "projectName":"analytics","keyLabel":"prod" }` | Add project+key inside org |
 | `POST` | `/admin/projects/{projectId}/api-keys` | `{ "label":"read-only" }` optional | Adds additional key for same project |
 
-Approving a waitlist entry does **not** create an end-user password or login flow. Instead, the backend immediately provisions the organization → project → API key tuple and returns it to the admin caller. `GET /admin/waitlist` mirrors those details (including the API key value) so your provisioning console can show or email the credential to the builder later.
+Approving a waitlist entry does **not** auto-set a password. The backend provisions the organization → project → API key tuple and marks the related `users` row as approved. Builders then call `/auth/check-whitelist` → `/auth/setup-password` to finalize their login before using `/user/*`.
+
+### Builder auth & self-service (JWT bearer)
+Once approved, a waitlist entry becomes a `users` row. Builders set a password once, then authenticate with `Authorization: Bearer <token>`:
+
+| Method | Path | Body | Result |
+| --- | --- | --- | --- |
+| `POST` | `/auth/check-whitelist` | `{ "email": "founder@example.com" }` | Returns status + whether password is set |
+| `POST` | `/auth/setup-password` | `{ "email": "founder@example.com", "password": "..." }` | First-time password creation (approved entries only) |
+| `POST` | `/auth/login` | `{ "email": "...", "password": "..." }` | Issues JWT (`expiresIn = JWT_TTL_SECONDS`) |
+| `GET` | `/user/profile` | – | Returns user info + owned orgs/projects |
+| `GET` | `/user/organizations` | – | List organizations owned by the builder |
+| `GET` | `/user/projects` | – | List builder-owned projects |
+| `POST` | `/user/projects` | `{ "projectName": "...", "organizationId?": "...", "organizationName?": "...", "keyLabel?": "..." }` | Create project + API key inside builder-owned org |
+| `POST` | `/user/projects/{id}/api-keys` | `{ "label":"staging" }` optional | Mint additional keys for a builder-owned project |
 
 ## 2. Project APIs (require `X-VOIKE-API-Key`)
 

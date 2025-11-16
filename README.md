@@ -33,10 +33,11 @@ Hybrid VDB (SQL + Document + Vector + KV + Graph + Time-Series)
 3. **Organizations & projects** – Approvals (or direct admin calls) mint orgs + projects.
 4. **API keys** – `X-VOIKE-API-Key` authenticates ingestion/query/MCP endpoints. Projects can hold multiple keys (e.g., prod vs. staging).
 5. **Playground key (optional)** – Set `PLAYGROUND_API_KEY` to auto-create a demo project/key that appears on `/` + `/info`. Use that for docs, a public playground, or sample SDKs.
+6. **Builder accounts** – Each waitlist entry now maps to a `users` row. Approved users set their password via `/auth/setup-password` and manage their own orgs/projects/API keys via `/user/*`.
 
 Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemetry events) are all tagged with `project_id`, so multi-tenant isolation is enforced server-side.
 
-> Waitlist approvals do **not** create end-user passwords or logins. When an admin (or your provisioning portal) calls `POST /admin/waitlist/:id/approve`, the backend automatically mints the organization, project, and API key for that builder. Share the API key (or surface it in your UI) and they can immediately call ingestion/query endpoints—no additional password ceremony required.
+> Waitlist approvals still auto-mint the organization/project/API key tuple, but they now also mark the builder’s `users` record as **approved**. Builders hit `/auth/check-whitelist` to confirm approval, call `/auth/setup-password` once, and then sign in via `/auth/login` to manage their own orgs/projects/API keys through `/user/*` routes.
 
 ## Quickstart Handbook (8 Steps)
 1. **Clone + install (for lint/tests only)**  
@@ -51,6 +52,8 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/voikex
    ADMIN_TOKEN=super-secret-admin
    PLAYGROUND_API_KEY=voike-playground-demo   # optional but great for docs/testing
+   JWT_SECRET=super-secret-jwt
+   JWT_TTL_SECONDS=86400
    ```
 3. **Run with Docker Compose** (no local Node/npm needed afterwards):  
    ```bash
@@ -94,6 +97,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
 - `docs/openapi.yaml` – machine-readable schema for codegen.
 - `GET /` – Tailwind landing page (embed in docs portals or show as-is).  
   `GET /info` – same payload in JSON for CLI/SDK.
+- **Builder auth routes** – `/auth/check-whitelist`, `/auth/setup-password`, and `/auth/login` let approved waitlist entries self-serve. Authenticated builders can call `/user/profile`, `/user/organizations`, `/user/projects`, and `/user/projects/:id/api-keys` to run their own provisioning workflows without the admin token.
 
 ## Testing & Tooling
 - `npm test` – Jest coverage for kernels, UIE, VDB, and end-to-end ingestion flow (uses a MockPool).
@@ -109,7 +113,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
 
 ## Operating Notes
 - **CORS**: Enabled for all origins by default (Fastify CORS plugin). If a frontend can’t reach the API, double-check it sends `X-VOIKE-API-Key` and that the browser allows custom headers.
-- **Admin portal expectations**: There is no `/login` page—your frontend should hit `/waitlist`, `/admin/*`, etc., and simply supply the admin token. A “login form” typically just collects email/password and converts it into the header (or uses a secret manager).
+- **Admin portal expectations**: There is still no username/password flow for admins—protect `/waitlist`, `/admin/*`, etc., by collecting the admin token (from a vault or secure form) and placing it in `X-VOIKE-ADMIN-TOKEN`. Builder dashboards use the new JWT-based `/auth/*` + `/user/*` routes instead.
 - **Playground experiences**: Create a dedicated “Playground” project/key and surface it in docs so people can try `/query` immediately without provisioning.
 - **HA & resilience**: Docker Compose is single-node; to avoid a single edge outage, run multiple nodes (voike1, voike2, …) pointing to a shared HA Postgres. Use Cloudflare LB / Nginx / HAProxy so `voike.supremeuf.com` survives node loss. Docker itself isn’t clustered—tools like Nomad, Kubernetes, or Docker Swarm can keep multiple VOIKE containers alive while corosync/Patroni handle database replication.
 - **Upgrades**: Follow the `git fetch && git reset --hard origin/main && docker compose up -d --build` flow. Postgres volume keeps Truth Ledger + ingestion data safe.

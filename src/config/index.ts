@@ -17,6 +17,12 @@ export type AppConfig = {
   telemetry: {
     enabled: boolean;
   };
+  auth: {
+    adminToken: string;
+    playgroundKey?: string;
+    jwtSecret: string;
+    tokenTtlSeconds: number;
+  };
   kernel: KernelHyperParameters;
   queryLimits: {
     maxRows: number;
@@ -39,6 +45,12 @@ export const config: AppConfig = {
   enableWebsocket: process.env.WS_ENABLED !== 'false',
   telemetry: {
     enabled: process.env.TELEMETRY_ENABLED !== 'false',
+  },
+  auth: {
+    adminToken: process.env.ADMIN_TOKEN || '',
+    playgroundKey: process.env.PLAYGROUND_API_KEY,
+    jwtSecret: process.env.JWT_SECRET || 'voike-dev-secret',
+    tokenTtlSeconds: parseNumber(process.env.JWT_TTL_SECONDS, 60 * 60 * 24),
   },
   kernel: {
     alpha: parseNumber(process.env.KERNEL_ALPHA, 0.7),
