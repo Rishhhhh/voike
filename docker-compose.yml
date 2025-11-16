@@ -22,17 +22,19 @@ services:
     build: .
     privileged: true
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/voikex
-      PORT: 8080
-      ADMIN_TOKEN: super-secret
-      KERNEL_ALPHA: 0.7
-      KERNEL_BETA: 0.4
-      KERNEL_GAMMA: 0.6
-      KERNEL_LAMBDA: 0.3
-      QUERY_MAX_ROWS: 5000
-      QUERY_TIMEOUT_MS: 15000
-      WS_ENABLED: 'true'
-      TELEMETRY_ENABLED: 'true'
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/voikex}
+      PORT: ${PORT:-8080}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-voike-admin-5bb6c26f3a89441f8fbf95c7088795e4}
+      PLAYGROUND_API_KEY: ${PLAYGROUND_API_KEY:-voike-playground-4d3a5a978ef44b3497329d861522c4b8}
+      JWT_SECRET: ${JWT_SECRET:-voike-jwt-2f7c4b4d2d2d4e0aa7c6ef379245a80e}
+      KERNEL_ALPHA: ${KERNEL_ALPHA:-0.7}
+      KERNEL_BETA: ${KERNEL_BETA:-0.4}
+      KERNEL_GAMMA: ${KERNEL_GAMMA:-0.6}
+      KERNEL_LAMBDA: ${KERNEL_LAMBDA:-0.3}
+      QUERY_MAX_ROWS: ${QUERY_MAX_ROWS:-5000}
+      QUERY_TIMEOUT_MS: ${QUERY_TIMEOUT_MS:-15000}
+      WS_ENABLED: ${WS_ENABLED:-'true'}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-'true'}
     ports:
       - '8080:8080'
     depends_on:
