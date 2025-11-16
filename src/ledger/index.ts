@@ -27,6 +27,11 @@ export const ensureLedgerTables = async (pool: Pool) => {
       meta JSONB
     );
   `);
+  await pool.query(`ALTER TABLE truth_ledger ADD COLUMN IF NOT EXISTS project_id UUID;`);
+  await pool.query(`UPDATE truth_ledger SET project_id = COALESCE(project_id, $1)`, [
+    DEFAULT_PROJECT_ID,
+  ]);
+  await pool.query(`ALTER TABLE truth_ledger ALTER COLUMN project_id SET NOT NULL;`);
   await pool.query(
     `CREATE INDEX IF NOT EXISTS idx_truth_ledger_project ON truth_ledger(project_id, timestamp DESC);`,
   );
@@ -37,6 +42,15 @@ export const ensureLedgerTables = async (pool: Pool) => {
       virtual_energy DOUBLE PRECISION DEFAULT 1.0
     );
   `);
+  await pool.query(`ALTER TABLE kernel_states ADD COLUMN IF NOT EXISTS project_id UUID;`);
+  await pool.query(`UPDATE kernel_states SET project_id = COALESCE(project_id, $1)`, [
+    DEFAULT_PROJECT_ID,
+  ]);
+  await pool.query(`ALTER TABLE kernel_states DROP CONSTRAINT IF EXISTS kernel_states_pkey;`);
+  await pool.query(
+    `ALTER TABLE kernel_states ADD CONSTRAINT kernel_states_pkey PRIMARY KEY (project_id);`,
+  );
+  await pool.query(`ALTER TABLE kernel_states DROP COLUMN IF EXISTS id;`);
 
   await pool.query(
     `INSERT INTO kernel_states (project_id, virtual_energy)
