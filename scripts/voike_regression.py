@@ -47,6 +47,9 @@ def request(
     final_headers = {}
     if auth_required:
         final_headers.update(DEFAULT_HEADERS)
+    # When uploading files, let requests set the multipart boundary.
+    if files:
+        final_headers.pop("content-type", None)
     if headers:
         final_headers.update(headers)
     resp = requests.request(
