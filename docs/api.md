@@ -15,6 +15,7 @@ The landing page lists whichever `PLAYGROUND_API_KEY` you configured. Use it for
 - **Provisioning header**: `X-VOIKE-ADMIN-TOKEN` (value = `ADMIN_TOKEN`). Required for waitlist approvals plus organization/project/API-key management.
 - **Project header**: `X-VOIKE-API-Key`. Every ingestion/query/kernels/telemetry route requires this key.
 - **Playground key (optional)**: Set `PLAYGROUND_API_KEY` to auto-create a “Playground Project” and expose that key on `/` + `/info`. Great for public sandboxes, docs, or SDK defaults.
+- If any of the above env vars are unset, VOIKE-X falls back to the random-looking defaults shown in `.env.example` and logs a warning during boot so Docker-based demos keep working.
 
 ### Waitlist (public)
 - `POST /waitlist`
@@ -124,7 +125,7 @@ curl -X POST https://voike.supremeuf.com/waitlist \
 
 # Approve and mint project/key
 curl -X POST https://voike.supremeuf.com/admin/waitlist/<WAITLIST_ID>/approve \
-  -H 'x-voike-admin-token: SUPER_SECRET' \
+  -H 'x-voike-admin-token: voike-admin-5bb6c26f3a89441f8fbf95c7088795e4' \
   -H 'content-type: application/json' \
   -d '{ "organizationName":"Ada Labs", "projectName":"vector-api", "keyLabel":"primary" }'
 

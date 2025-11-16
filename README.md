@@ -32,7 +32,8 @@ Hybrid VDB (SQL + Document + Vector + KV + Graph + Time-Series)
 2. **Admin token** – All provisioning endpoints require `X-VOIKE-ADMIN-TOKEN` (`ADMIN_TOKEN` env).
 3. **Organizations & projects** – Approvals (or direct admin calls) mint orgs + projects.
 4. **API keys** – `X-VOIKE-API-Key` authenticates ingestion/query/MCP endpoints. Projects can hold multiple keys (e.g., prod vs. staging).
-5. **Playground key (optional)** – Set `PLAYGROUND_API_KEY` to auto-create a demo project/key that appears on `/` + `/info`. Use that for docs, a public playground, or sample SDKs.
+5. **Playground key (optional)** – Set `PLAYGROUND_API_KEY` to auto-create a demo project/key that appears on `/` + `/info`. Use that for docs, a public playground, or sample SDKs. (If you skip this, VOIKE-X falls back to the default shown in `.env.example` so local Docker still works.)
+6. **Admin/JWT fallbacks** – Missing `ADMIN_TOKEN`/`JWT_SECRET` automatically fall back to the `.env.example` defaults and log a warning. Override them in production.
 6. **Builder accounts** – Each waitlist entry now maps to a `users` row. Approved users set their password via `/auth/setup-password` and manage their own orgs/projects/API keys via `/user/*`.
 
 Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemetry events) are all tagged with `project_id`, so multi-tenant isolation is enforced server-side.
@@ -50,9 +51,9 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
    Copy `.env.example` → `.env` and update:
    ```env
    DATABASE_URL=postgres://postgres:postgres@localhost:5432/voikex
-   ADMIN_TOKEN=super-secret-admin
-   PLAYGROUND_API_KEY=voike-playground-demo   # optional but great for docs/testing
-   JWT_SECRET=super-secret-jwt
+   ADMIN_TOKEN=voike-admin-5bb6c26f3a89441f8fbf95c7088795e4
+   PLAYGROUND_API_KEY=voike-playground-4d3a5a978ef44b3497329d861522c4b8   # optional but great for docs/testing
+   JWT_SECRET=voike-jwt-2f7c4b4d2d2d4e0aa7c6ef379245a80e
    JWT_TTL_SECONDS=86400
    ```
 3. **Run with Docker Compose** (no local Node/npm needed afterwards):  
@@ -69,7 +70,7 @@ Data plane tables (ingest jobs, Truth Ledger, kernel states, DAI growth, telemet
    # or mint immediately
    curl -X POST http://localhost:8080/admin/projects \
      -H 'content-type: application/json' \
-     -H 'x-voike-admin-token: super-secret-admin' \
+     -H 'x-voike-admin-token: voike-admin-5bb6c26f3a89441f8fbf95c7088795e4' \
      -d '{ "projectName":"demo","organizationName":"acme","keyLabel":"primary" }'
    ```
 5. **Capture the API key** – Response includes `project.id` + `apiKey.key`. Supply that value as `X-VOIKE-API-Key` on every protected request (or set `VOIKE_API_KEY` env for scripts).

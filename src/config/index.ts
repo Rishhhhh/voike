@@ -2,6 +2,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const fallbackSecret = (envKey: string, fallbackValue: string) => {
+  if (!process.env[envKey]) {
+    console.warn(`[config] ${envKey} not set. Using fallback value from .env.example.`);
+  }
+  return process.env[envKey] || fallbackValue;
+};
+
+const DEFAULT_ADMIN_TOKEN = 'voike-admin-5bb6c26f3a89441f8fbf95c7088795e4';
+const DEFAULT_PLAYGROUND_KEY = 'voike-playground-4d3a5a978ef44b3497329d861522c4b8';
+const DEFAULT_JWT_SECRET = 'voike-jwt-2f7c4b4d2d2d4e0aa7c6ef379245a80e';
+
 export type KernelHyperParameters = {
   alpha: number;
   beta: number;
@@ -47,9 +58,9 @@ export const config: AppConfig = {
     enabled: process.env.TELEMETRY_ENABLED !== 'false',
   },
   auth: {
-    adminToken: process.env.ADMIN_TOKEN || '',
-    playgroundKey: process.env.PLAYGROUND_API_KEY,
-    jwtSecret: process.env.JWT_SECRET || 'voike-dev-secret',
+    adminToken: fallbackSecret('ADMIN_TOKEN', DEFAULT_ADMIN_TOKEN),
+    playgroundKey: fallbackSecret('PLAYGROUND_API_KEY', DEFAULT_PLAYGROUND_KEY),
+    jwtSecret: fallbackSecret('JWT_SECRET', DEFAULT_JWT_SECRET),
     tokenTtlSeconds: parseNumber(process.env.JWT_TTL_SECONDS, 60 * 60 * 24),
   },
   kernel: {
