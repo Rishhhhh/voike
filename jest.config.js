@@ -13,6 +13,7 @@ module.exports = {
     '^@mcp/(.*)$': '<rootDir>/src/mcp/$1',
     '^@ledger/(.*)$': '<rootDir>/src/ledger/$1',
     '^@runtime/(.*)$': '<rootDir>/src/runtime/$1',
-    '^@telemetry/(.*)$': '<rootDir>/src/telemetry/$1'
+    '^@telemetry/(.*)$': '<rootDir>/src/telemetry/$1',
+    '^@auth/(.*)$': '<rootDir>/src/auth/$1'
   }
 };

@@ -7,28 +7,22 @@ import { createDefaultToolRegistry } from '@mcp/index';
 import { Kernel9 } from '@kernel9/index';
 import { DAIEngine } from '@semantic/dai';
 import { logger } from '@telemetry/index';
+import { ensureAuthTables } from '@auth/index';
 
 const bootstrap = async () => {
   const pool = createPool();
   const vdb = new VDBClient(pool);
   await vdb.ensureBaseSchema();
+  await ensureAuthTables(pool, config.auth.playgroundKey);
   await ensureLedgerTables(pool);
   const uie = new UniversalIngestionEngine(pool, vdb);
   const kernel9 = new Kernel9(pool);
   const dai = new DAIEngine(pool, kernel9);
-  await dai.loadState();
+  await dai.ensureTable();
   const tools = await createDefaultToolRegistry(pool, vdb, uie, kernel9, dai);
   const server = buildServer({ pool, vdb, uie, tools, dai });
   await server.listen({ port: config.port, host: '0.0.0.0' });
   logger.info(`VOIKE-X listening on port ${config.port}`);
-  setInterval(() => {
-    dai
-      .updateGrowthState({})
-      .then(() =>
-        logger.debug('DAI state updated'),
-      )
-      .catch((err) => logger.warn({ err }, 'Failed to run DAI update'));
-  }, 60_000);
 };
 
 bootstrap().catch((err) => {

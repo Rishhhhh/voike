@@ -35,10 +35,10 @@ class MetricCollector extends EventEmitter {
 export const metrics = new MetricCollector();
 
 export type TelemetryEvent =
-  | { type: 'ingest.completed'; payload: Record<string, unknown> }
-  | { type: 'query.executed'; payload: Record<string, unknown> }
-  | { type: 'kernel.energyUpdated'; payload: Record<string, unknown> }
-  | { type: 'dai.updateSuggested'; payload: Record<string, unknown> };
+  | { type: 'ingest.completed'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'query.executed'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'kernel.energyUpdated'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'dai.updateSuggested'; payload: Record<string, unknown> & { projectId?: string } };
 
 class TelemetryBus extends EventEmitter {
   publish(event: TelemetryEvent) {

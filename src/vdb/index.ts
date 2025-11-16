@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { config } from '@config';
 import { logger, metrics } from '@telemetry/index';
+import { DEFAULT_PROJECT_ID } from '@auth/index';
 
 export type VDBQuery = {
   kind: 'sql' | 'semantic' | 'hybrid';
@@ -35,12 +36,24 @@ export class VDBClient {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ingest_jobs (
         id UUID PRIMARY KEY,
+        project_id UUID,
         status TEXT NOT NULL,
         summary JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await this.pool.query(`ALTER TABLE ingest_jobs ADD COLUMN IF NOT EXISTS project_id UUID`);
+    await this.pool.query(
+      `UPDATE ingest_jobs SET project_id = $1 WHERE project_id IS NULL`,
+      [DEFAULT_PROJECT_ID],
+    );
+    await this.pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project ON ingest_jobs(project_id);`,
+    );
+    await this.pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project ON ingest_jobs(project_id);`,
+    );
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS embeddings (
         id UUID PRIMARY KEY,

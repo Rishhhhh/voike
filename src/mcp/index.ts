@@ -9,6 +9,7 @@ import { getVirtualEnergy } from '@ledger/index';
 
 export type McpContext = {
   sessionId: string;
+  projectId: string;
   userId?: string;
   kernelConfigId?: string;
   traceId?: string;
@@ -77,11 +78,14 @@ export const createDefaultToolRegistry = async (
       jobId: z.string(),
       table: z.string(),
     }),
-    handler: async (input) =>
-      uie.ingestFile({
-        bytes: Buffer.from(input.base64, 'base64'),
-        filename: input.filename,
-      }),
+    handler: async (input, context) =>
+      uie.ingestFile(
+        {
+          bytes: Buffer.from(input.base64, 'base64'),
+          filename: input.filename,
+        },
+        context.projectId,
+      ),
   });
 
   registry.register({
@@ -106,7 +110,7 @@ export const createDefaultToolRegistry = async (
       probabilities: z.array(z.number()),
     }),
     handler: async (input, context) =>
-      runVASVEL(pool, { query: input.query, context }, () => input.candidates),
+      runVASVEL(pool, { query: input.query, context }, () => input.candidates, context.projectId),
   });
 
   registry.register({
@@ -116,7 +120,7 @@ export const createDefaultToolRegistry = async (
     outputSchema: z.object({
       energy: z.number(),
     }),
-    handler: async () => ({ energy: await getVirtualEnergy(pool) }),
+    handler: async (_input, context) => ({ energy: await getVirtualEnergy(pool, context.projectId) }),
   });
 
   registry.register({
@@ -126,7 +130,7 @@ export const createDefaultToolRegistry = async (
     outputSchema: z.object({
       hints: z.any(),
     }),
-    handler: async () => ({ hints: await kernel9.analyzeQueryHistory() }),
+    handler: async (_input, context) => ({ hints: await kernel9.analyzeQueryHistory(context.projectId) }),
   });
 
   registry.register({
@@ -136,7 +140,7 @@ export const createDefaultToolRegistry = async (
     outputSchema: z.object({
       state: z.any(),
     }),
-    handler: async () => ({ state: dai.getState() }),
+    handler: async (_input, context) => ({ state: await dai.getState(context.projectId) }),
   });
   return registry;
 };

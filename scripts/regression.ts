@@ -1,16 +1,25 @@
 import { FormData, File } from 'undici';
 
 const baseUrl = process.env.VOIKE_BASE_URL || 'http://localhost:8080';
+const apiKey = process.env.VOIKE_API_KEY;
+if (!apiKey) {
+  throw new Error('VOIKE_API_KEY env var is required for regression suite.');
+}
 
 const csvSample = `id,name,score
 1,Ada Lovelace,99
 2,Grace Hopper,97
 3,Katherine Johnson,95`;
 
+const defaultHeaders = {
+  'content-type': 'application/json',
+  'x-voike-api-key': apiKey,
+};
+
 const postJson = async <T>(path: string, body?: any): Promise<T> => {
   const res = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: defaultHeaders,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -19,8 +28,10 @@ const postJson = async <T>(path: string, body?: any): Promise<T> => {
   return (await res.json()) as T;
 };
 
-const getJson = async <T>(path: string): Promise<T> => {
-  const res = await fetch(`${baseUrl}${path}`);
+const getJson = async <T>(path: string, authenticated = true): Promise<T> => {
+  const res = await fetch(`${baseUrl}${path}`, {
+    headers: authenticated ? { 'x-voike-api-key': apiKey } : undefined,
+  });
   if (!res.ok) {
     throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
   }
@@ -32,7 +43,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const run = async () => {
   console.log(`Running regression suite against ${baseUrl}`);
 
-  const health = await getJson<{ status: string; kernel: number }>('/health');
+  const health = await getJson<{ status: string; kernel: number }>('/health', false);
   console.log('Health:', health);
 
   const form = new FormData();
@@ -43,6 +54,7 @@ const run = async () => {
   const ingestRes = await fetch(`${baseUrl}/ingest/file`, {
     method: 'POST',
     body: form,
+    headers: { 'x-voike-api-key': apiKey },
   });
   if (ingestRes.status !== 202) {
     throw new Error(`Ingest failed: ${ingestRes.status} ${await ingestRes.text()}`);

@@ -10,9 +10,14 @@ export type AdaptiveHint = {
 export class Kernel9 {
   constructor(private pool: Pool) {}
 
-  async analyzeQueryHistory(): Promise<AdaptiveHint> {
+  async analyzeQueryHistory(projectId: string): Promise<AdaptiveHint> {
     const { rows } = await this.pool.query(
-      `SELECT seed_state->>'target' as target FROM truth_ledger ORDER BY timestamp DESC LIMIT 100`,
+      `SELECT seed_state->>'target' as target
+       FROM truth_ledger
+       WHERE project_id = $1
+       ORDER BY timestamp DESC
+       LIMIT 100`,
+      [projectId],
     );
     const vectorHeavy = rows.filter((row) => row.target === 'vector').length;
     const suggestion: AdaptiveHint = {};

@@ -9,12 +9,10 @@ describe('DAIEngine', () => {
       analyzeQueryHistory: jest.fn().mockResolvedValue({ cacheTtlSeconds: 120 }),
     } as any;
     const engine = new DAIEngine(pool, kernel9);
-    (engine as any).state = { cacheTtlSeconds: 60, beta: 0.4 };
-    await engine.updateGrowthState({ queryLatencyMs: 1500 });
-    expect(engine.getState().cacheTtlSeconds).toBe(120);
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE growth_state'),
-      expect.any(Array),
-    );
+    await engine.ensureTable();
+    const projectId = 'proj-test';
+    await engine.updateGrowthState(projectId, { queryLatencyMs: 1500 });
+    const state = await engine.getState(projectId);
+    expect(state.cacheTtlSeconds).toBe(120);
   });
 });

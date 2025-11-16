@@ -8,11 +8,15 @@ describe('End-to-end ingestion', () => {
     const vdb = new VDBClient(pool as any);
     const uie = new UniversalIngestionEngine(pool as any, vdb);
     const csv = 'id,name\n1,Ada\n2,Grace';
-    const result = await uie.ingestFile({
-      bytes: Buffer.from(csv),
-      filename: 'scientists.csv',
-    });
-    const job = await uie.getJob(result.jobId);
+    const projectId = 'project-test';
+    const result = await uie.ingestFile(
+      {
+        bytes: Buffer.from(csv),
+        filename: 'scientists.csv',
+      },
+      projectId,
+    );
+    const job = await uie.getJob(result.jobId, projectId);
     expect(job?.status).toBe('completed');
     expect(result.table).toContain('scientists');
   });

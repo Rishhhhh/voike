@@ -49,6 +49,7 @@ export const runVASVEL = async (
   pool: Pool,
   seed: SeedState,
   candidateFactory: () => CandidatePlan[],
+  projectId: string,
 ): Promise<VASVELResult> => {
   const candidates = candidateFactory();
   const logits = softmax(candidates.map((c) => c.score));
@@ -69,21 +70,25 @@ export const runVASVEL = async (
       ? 0
       : -1;
   const chosen = gatedCandidates[bestIdx] || candidates[0];
-  const previousEnergy = await getVirtualEnergy(pool);
+  const previousEnergy = await getVirtualEnergy(pool, projectId);
   const nextEnergy = previousEnergy + utilities.reduce((sum, u) => sum + u, 0) * 0.01;
-  await updateVirtualEnergy(pool, nextEnergy);
-  await logKernelDecision(pool, {
-    seedState: seed,
-    candidates,
-    chosen,
-    scores: reweighted,
-    energyBefore: previousEnergy,
-    energyAfter: nextEnergy,
-    meta: { component: 'VASVEL' },
-  });
+  await updateVirtualEnergy(pool, projectId, nextEnergy);
+  await logKernelDecision(
+    pool,
+    {
+      seedState: seed,
+      candidates,
+      chosen,
+      scores: reweighted,
+      energyBefore: previousEnergy,
+      energyAfter: nextEnergy,
+      meta: { component: 'VASVEL' },
+    },
+    projectId,
+  );
   telemetryBus.publish({
     type: 'kernel.energyUpdated',
-    payload: { previousEnergy, nextEnergy },
+    payload: { previousEnergy, nextEnergy, projectId },
   });
   return { chosen, candidates, probabilities: reweighted };
 };

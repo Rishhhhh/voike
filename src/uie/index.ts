@@ -17,17 +17,17 @@ import { logger, telemetryBus } from '@telemetry/index';
 export class UniversalIngestionEngine {
   constructor(private pool: Pool, private vdb: VDBClient) {}
 
-  private async createJob(status: string) {
+  private async createJob(status: string, projectId: string) {
     const id = uuidv4();
     await this.pool.query(
-      `INSERT INTO ingest_jobs (id, status, summary) VALUES ($1, $2, $3)`,
-      [id, status, {}],
+      `INSERT INTO ingest_jobs (id, project_id, status, summary) VALUES ($1, $2, $3, $4)`,
+      [id, projectId, status, {}],
     );
     return id;
   }
 
-  async ingestFile(request: IngestRequest) {
-    const jobId = await this.createJob('processing');
+  async ingestFile(request: IngestRequest, projectId: string) {
+    const jobId = await this.createJob('processing', projectId);
     try {
       const format = await detectFormat(request.bytes, request.filename, request.mimeType);
       let structured: StructuredData;
@@ -61,9 +61,10 @@ export class UniversalIngestionEngine {
       const schema = synthesizeSchema(structured);
       await this.materialize(structured, schema);
       await this.pool.query(
-        `UPDATE ingest_jobs SET status = 'completed', summary = $2 WHERE id = $1`,
+        `UPDATE ingest_jobs SET status = 'completed', summary = $3 WHERE id = $1 AND project_id = $2`,
         [
           jobId,
+          projectId,
           {
             format,
             table: schema.tableName,
@@ -74,14 +75,14 @@ export class UniversalIngestionEngine {
       );
       telemetryBus.publish({
         type: 'ingest.completed',
-        payload: { jobId, strategy: schema.strategy },
+        payload: { jobId, strategy: schema.strategy, projectId },
       });
       return { jobId, table: schema.tableName };
     } catch (err) {
       logger.error({ err }, 'Ingestion failed');
       await this.pool.query(
-        `UPDATE ingest_jobs SET status = 'failed', summary = $2 WHERE id = $1`,
-        [jobId, { error: (err as Error).message }],
+        `UPDATE ingest_jobs SET status = 'failed', summary = $3 WHERE id = $1 AND project_id = $2`,
+        [jobId, projectId, { error: (err as Error).message }],
       );
       throw err;
     }
@@ -126,8 +127,11 @@ export class UniversalIngestionEngine {
     }
   }
 
-  async getJob(jobId: string) {
-    const { rows } = await this.pool.query(`SELECT * FROM ingest_jobs WHERE id = $1`, [jobId]);
+  async getJob(jobId: string, projectId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM ingest_jobs WHERE id = $1 AND project_id = $2`,
+      [jobId, projectId],
+    );
     return rows[0] || null;
   }
 }
