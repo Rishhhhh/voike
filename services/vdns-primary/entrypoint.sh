@@ -15,10 +15,10 @@ fi
 
 trap "kill 0" EXIT
 
-mkdir -p "$(dirname "${ZONE_PATH}")" /etc/knot /run/knot
+mkdir -p "$(dirname "${ZONE_PATH}")" /etc/knot /run/knot /var/lib/knot
 chmod 755 /run/knot
 if id knot &>/dev/null; then
-  chown -R knot:knot /run/knot "$(dirname "${ZONE_PATH}")" || true
+  chown -R knot:knot /run/knot "$(dirname "${ZONE_PATH}")" /var/lib/knot || true
 fi
 
 ensure_zone_perms() {
@@ -65,6 +65,7 @@ cat >/etc/knot/knot.conf <<EOF
 server:
   identity: "${VDNS_IDENTITY:-voike-vdns-primary}"
   listen: ["0.0.0.0@53", "::@53"]
+  pid-file: "/var/lib/knot/knot.pid"
 log:
   - target: stdout
     any: info
