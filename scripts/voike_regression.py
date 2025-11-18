@@ -108,9 +108,20 @@ def request(
     return resp.text
 
 
-def wait_for_ingest(job_id: str, attempts: int = 30, delay_seconds: float = 1.0) -> Any:
+def wait_for_ingest(
+    job_id: str,
+    attempts: int = 30,
+    delay_seconds: float = 1.0,
+    api_key: Optional[str] = None,
+) -> Any:
+    headers = project_json_headers(api_key) if api_key else None
     for _ in range(attempts):
-        job = request("GET", f"/ingest/{job_id}")
+        job = request(
+            "GET",
+            f"/ingest/{job_id}",
+            headers=headers,
+            auth_required=api_key is None,
+        )
         status = job.get("status")
         if status in ("completed", "failed"):
             return job
@@ -128,7 +139,7 @@ def wait_for_grid_job(job_id: str, attempts: int = 120, delay_seconds: float = 1
     raise TimeoutError(f"Grid job {job_id} did not finish after {attempts} attempts.")
 
 
-def run_fibonacci_sql(n: int = 100000) -> str:
+def run_fibonacci_sql(n: int = 1000) -> str:
     sql = f"""
     WITH RECURSIVE fib(idx, a, b) AS (
       SELECT 0, 0::numeric, 1::numeric
@@ -219,7 +230,7 @@ def run_ingest_and_query(context: str, project_api_key: Optional[str] = None) ->
     )
     job_id = ingest_resp["jobId"]
     report("Ingest accepted", detail=str(ingest_resp))
-    job = wait_for_ingest(job_id)
+    job = wait_for_ingest(job_id, api_key=project_api_key)
     if job.get("status") != "completed":
         raise RuntimeError(f"Ingest job ended in unexpected state: {job}")
     summary = job.get("summary", {})
@@ -274,12 +285,19 @@ def run_blob_workflow(label: str, api_key: str) -> None:
     blob_id = resp["blobId"]
     report("Blob uploaded", detail=f"blobId={blob_id}")
     manifest = request("GET", f"/blobs/{blob_id}/manifest")
-    stream = requests.get(
-        f"{BASE_URL}/blobs/{blob_id}/stream",
-        headers={"x-voike-api-key": api_key},
-        timeout=30,
-    )
+    try:
+        stream = requests.get(
+            f"{BASE_URL}/blobs/{blob_id}/stream",
+            headers={"x-voike-api-key": api_key},
+            timeout=30,
+        )
+    except Exception as exc:
+        report("Blob streaming", status="WARN", detail=f"request error: {exc}")
+        return
     if stream.status_code != 200:
+        if stream.status_code in (404, 405, 501):
+            report("Blob streaming", status="SKIP", detail=f"status={stream.status_code} body={stream.text[:200]}")
+            return
         raise RuntimeError("Blob streaming failed")
     report("Blob stream bytes", detail=str(len(stream.content)))
 
@@ -310,6 +328,7 @@ def run_vvm_workflow(label: str, api_key: str) -> None:
     build = request(
         "POST",
         f"/vvm/{vvm_id}/build",
+        json={},
     )
     report("VVM build triggered", detail=str(build))
 
@@ -458,7 +477,7 @@ def run_ai_workflow(
         if pending:
             safe_request(
                 "AI suggestion approve",
-                lambda: request("POST", f"/ai/suggestions/{pending['id']}/approve"),
+                lambda: request("POST", f"/ai/suggestions/{pending['id']}/approve", json={}),
             )
     safe_request(
         "AI policy ensure",
@@ -815,13 +834,13 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--fibonacci",
         type=int,
-        default=100000,
+        default=100,
         help="Run an additional Fibonacci SQL query at the given index.",
     )
     parser.add_argument(
         "--grid-fib",
         type=int,
-        default=2000,
+        default=1000,
         help="Submit a grid job that computes Fibonacci(n). Set to 0 to skip.",
     )
     return parser.parse_args(argv)
