@@ -40,6 +40,15 @@ docker compose up -d --build
 ```
 Docker spins up the backend plus Postgres. `/` serves the docs landing page; `/info` returns the same payload as JSON.
 
+### 2.1.1 Shared Postgres (multi-node)
+If you want multiple VOIKE nodes (Mac + Linux, edge + core) to share the same control-plane database, run the helper script on every machine before starting Docker:
+```bash
+# Replace the URL with your managed/remote Postgres instance
+VOIKE_SHARED_DATABASE_URL=postgres://user:pass@host:5432/voikex \
+node scripts/set_shared_db.js
+```
+This rewrites `.env` to point `DATABASE_URL` at the shared instance so `/mesh/nodes` and `/grid/jobs` are synchronized across nodes.
+
 ### 2.2 Get an API key (playground route)
 ```bash
 curl -X POST http://localhost:8080/admin/projects \
