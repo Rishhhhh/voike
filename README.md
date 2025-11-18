@@ -241,6 +241,28 @@ Response:
 }
 ```
 
+## 6.2 VDNS Zone Management (Phase 2)
+- Zone definitions live in `config/vdns-zones.json`. Each record update bumps the zone serial automatically.
+- `flows/vdns-zone-sync.flow` automates zone export + record inserts through FLOW/APX, so you can version-control DNS operations.
+- HTTP admin endpoints:
+  - `GET /vdns/zones` – list zones.
+  - `GET /vdns/zones/:id/export` – emit BIND/Knot-compatible zone text.
+  - `POST /vdns/records` – append a DNS record (`{ zoneId, record }`).
+
+Example: add A record and export zone
+
+```bash
+curl -X POST http://localhost:8080/vdns/records \
+  -H 'content-type: application/json' \
+  -H 'x-voike-admin-token: <ADMIN_TOKEN>' \
+  -d '{ "zoneId": "voike-com", "record": { "type": "A", "name": "edge.voike.com.", "value": "203.0.113.55" } }'
+
+curl -s http://localhost:8080/vdns/zones/voike-com/export \
+  -H 'x-voike-admin-token: <ADMIN_TOKEN>'
+```
+
+Use the exported zone file to feed Knot/NSD authoritative servers in the SNRL POPs. Combined with `/snrl/resolve`, VOIKE now controls both semantic resolution and the authoritative DNS zone state.
+
 ### LLM configuration
 - Set `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com`), and `OPENAI_MODEL` (`gpt-5.1` by default) in `.env` to enable real GPT-backed flows (`/agents/fast-answer`, `flows/*` with `RUN AGENT`).
 - See `flow/docs/VPKG-spec.md` for the manifest format and what files are included inside each bundle.

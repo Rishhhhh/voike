@@ -33,6 +33,7 @@ import { GptClient } from '@agents/gpt';
 import { OnboardService } from '@onboard/service';
 import { SnrlService } from './snrl/service';
 import { SnrlController } from './snrl/controller';
+import { VdnsService } from './vdns/service';
 
 const bootstrap = async () => {
   const genesis = new GenesisService({
@@ -110,6 +111,7 @@ const bootstrap = async () => {
   const agentOps = new AgentOpsService(orchestrator, { llm: gptClient });
   const onboard = new OnboardService(orchestrator);
   const snrl = new SnrlService();
+  const vdns = new VdnsService();
   const flow = new FlowService({
     agentHandler: (agent, payload, ctx) => {
       if (['planner', 'reasoning', 'facts', 'code', 'critique', 'stitcher'].includes(agent)) {
@@ -172,6 +174,14 @@ const bootstrap = async () => {
           return snrl.sign(payload || {});
         case 'snrl.finalize':
           return snrl.finalize(payload || {});
+        case 'vdns.listZones':
+          return vdns.listZones();
+        case 'vdns.exportZone':
+          if (!payload?.zoneId) throw new Error('zoneId required');
+          return { zoneId: payload.zoneId, zoneFile: vdns.exportZoneFile(payload.zoneId) };
+        case 'vdns.addRecord':
+          if (!payload?.zoneId || !payload?.record) throw new Error('zoneId and record required');
+          return vdns.addRecord(payload.zoneId, payload.record);
         default:
           throw new Error(`Unknown APX_EXEC target ${target}`);
       }
@@ -314,6 +324,7 @@ const bootstrap = async () => {
     orchestrator,
     agentOps,
     snrl: snrlController,
+    vdns,
   });
   grid.startScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });

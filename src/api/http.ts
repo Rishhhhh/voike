@@ -41,6 +41,7 @@ import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { AgentOpsService } from '@agents/service';
 import { SnrlController } from '../snrl/controller';
+import { VdnsService } from '../vdns/service';
 import {
   addWaitlistEntry,
   approveWaitlistEntry,
@@ -385,6 +386,18 @@ const snrlResolveSchema = z.object({
       capabilities: z.array(z.string()).optional(),
     })
     .optional(),
+});
+
+const vdnsRecordSchema = z.object({
+  type: z.string().min(1),
+  name: z.string().min(1),
+  value: z.string().min(1),
+  ttl: z.number().optional(),
+});
+
+const vdnsRecordRequestSchema = z.object({
+  zoneId: z.string().min(1),
+  record: vdnsRecordSchema,
 });
 
 const waitlistSchema = z.object({
@@ -745,6 +758,7 @@ export type ApiDeps = {
   env: EnvironmentService;
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
+  vdns: VdnsService;
 };
 
 export const buildServer = ({
@@ -775,6 +789,7 @@ export const buildServer = ({
   orchestrator,
   agentOps,
   snrl,
+  vdns,
 }: ApiDeps & {
   blobgrid: BlobGridService;
   edge: EdgeService;
@@ -798,6 +813,7 @@ export const buildServer = ({
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
   snrl: SnrlController;
+  vdns: VdnsService;
 }): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
   const apiKeyHeaderName = 'x-voike-api-key';
@@ -1971,6 +1987,40 @@ export const buildServer = ({
     try {
       const body = snrlResolveSchema.parse(request.body || {});
       return await snrl.resolve(body.domain, body.client);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/vdns/zones', { preHandler: requireAdmin }, async () => vdns.listZones());
+
+  app.get('/vdns/zones/:zoneId', { preHandler: requireAdmin }, async (request, reply) => {
+    const { zoneId } = request.params as { zoneId: string };
+    const zone = vdns.getZone(zoneId);
+    if (!zone) {
+      reply.code(404);
+      return { error: 'Zone not found' };
+    }
+    return zone;
+  });
+
+  app.get('/vdns/zones/:zoneId/export', { preHandler: requireAdmin }, async (request, reply) => {
+    const { zoneId } = request.params as { zoneId: string };
+    try {
+      const zoneFile = vdns.exportZoneFile(zoneId);
+      reply.header('content-type', 'text/plain');
+      return zoneFile;
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/vdns/records', { preHandler: requireAdmin }, async (request, reply) => {
+    const body = vdnsRecordRequestSchema.parse(request.body || {});
+    try {
+      return vdns.addRecord(body.zoneId, body.record);
     } catch (err) {
       reply.code(400);
       return { error: (err as Error).message };

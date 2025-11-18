@@ -1,0 +1,32 @@
+FLOW "VDNS Zone Sync"
+
+INPUTS
+  text zoneId
+  json record optional
+END INPUTS
+
+STEP records =
+  APX_EXEC "vdns.listZones"
+
+STEP zone =
+  APX_EXEC "vdns.exportZone"
+    WITH {
+      "zoneId": zoneId
+    }
+
+STEP maybe_add =
+  APX_EXEC "vdns.addRecord"
+    WITH {
+      "zoneId": zoneId,
+      "record": record
+    }
+
+STEP output =
+  OUTPUT_TEXT {
+    zoneId = zoneId,
+    export = zone.zoneFile,
+    serial = maybe_add.serial,
+    records = maybe_add.records
+  }
+
+END FLOW

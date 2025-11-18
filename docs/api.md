@@ -311,7 +311,14 @@ Notes:
 - Endpoints initially sourced from `config/snrl-endpoints.json`; update through MCP tools to reflect real POPs.
 - Responses are cryptographically signed so clients can verify provenance.
 
-### 2.24 Agent Ops
+### 2.24 VDNS Management
+- `GET /vdns/zones` (admin) – list configured zones.
+- `GET /vdns/zones/{zoneId}` / `GET /vdns/zones/{zoneId}/export` – inspect metadata or emit BIND/Knot zone files.
+- `POST /vdns/records` (admin) – append a DNS record and bump the zone serial (body: `{ zoneId, record }`).
+
+Zones are stored in `config/vdns-zones.json` by default; all changes are auditable and can also be triggered through FLOW (`flows/vdns-zone-sync.flow`). Feed the exported zone text into Knot/NSD authoritative servers for the A-Tier SNRL deployment.
+
+### 2.25 Agent Ops
 - `POST /agents/fast-answer` – run the fast multi-agent FLOW (planner → reasoning → facts → code → critique → stitch). Returns question, segments, taskId and the stitched answer; all steps are logged under `/orchestrator/tasks`.
 - APIX adds ops:
   - `agent.taskSplit`, `agent.reasoning`, `agent.facts`, `agent.code`, `agent.critique`, `agent.stitcher`, `agent.fastAnswer`.
