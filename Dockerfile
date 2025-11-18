@@ -13,4 +13,6 @@ COPY --from=base /app/tsconfig*.json ./
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/dist ./dist
 COPY --from=base /app/docs ./docs
-CMD ["node", "-r", "tsconfig-paths/register", "dist/index.js"]
+COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+ENTRYPOINT ["./docker-entrypoint.sh"]
