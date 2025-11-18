@@ -14,6 +14,13 @@ module.exports = {
     '^@ledger/(.*)$': '<rootDir>/src/ledger/$1',
     '^@runtime/(.*)$': '<rootDir>/src/runtime/$1',
     '^@telemetry/(.*)$': '<rootDir>/src/telemetry/$1',
-    '^@auth/(.*)$': '<rootDir>/src/auth/$1'
+    '^@auth/(.*)$': '<rootDir>/src/auth/$1',
+    '^@flow/(.*)$': '<rootDir>/flow/src/$1',
+    '^@vasm/(.*)$': '<rootDir>/vasm/src/$1',
+    '^@vpkg/(.*)$': '<rootDir>/src/vpkg/$1',
+    '^@env/(.*)$': '<rootDir>/src/env/$1',
+    '^@orchestrator/(.*)$': '<rootDir>/src/orchestrator/$1',
+    '^@agents/(.*)$': '<rootDir>/src/agents/$1',
+    '^@onboard/(.*)$': '<rootDir>/src/onboard/$1'
   }
 };

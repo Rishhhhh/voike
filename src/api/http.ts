@@ -36,6 +36,10 @@ import { FederationService } from '@federation/index';
 import { AiService } from '@ai/index';
 import { ChatService } from '@chat/index';
 import { FlowService } from '../flow/service';
+import { VpkgService } from '@vpkg/service';
+import { EnvironmentService } from '@env/service';
+import { OrchestratorService } from '@orchestrator/service';
+import { AgentOpsService } from '@agents/service';
 import {
   addWaitlistEntry,
   approveWaitlistEntry,
@@ -207,6 +211,160 @@ const renderLandingPage = (payload: DocsPayload) => {
 </html>`;
 };
 
+const renderFlowPlaygroundPage = () => {
+  return String.raw`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VOIKE FLOW Playground</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif; }
+    textarea, input, button { font-family: inherit; }
+    pre { font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100">
+  <main class="max-w-6xl mx-auto py-10 px-6 space-y-6">
+    <header class="space-y-2">
+      <p class="text-xs uppercase tracking-[0.4em] text-emerald-300/80">VOIKE FLOW</p>
+      <h1 class="text-3xl font-semibold text-white">Playground</h1>
+      <p class="text-sm text-slate-300">Paste a FLOW file, add your project API key, and run parse/plan/execute without leaving the browser.</p>
+    </header>
+    <section class="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 space-y-4">
+      <div class="grid gap-4 md:grid-cols-3">
+        <label class="space-y-2 text-sm text-slate-200">
+          <span>API Key (`x-voike-api-key`)</span>
+          <input id="apiKey" class="w-full px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100" placeholder="Paste project API key" type="password" />
+        </label>
+        <label class="space-y-2 text-sm text-slate-200">
+          <span>Execution Mode</span>
+          <select id="execMode" class="w-full px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100">
+            <option value="auto">auto</option>
+            <option value="sync">sync</option>
+            <option value="async">async</option>
+          </select>
+        </label>
+        <div class="space-y-2 text-sm text-slate-200">
+          <span>Last Plan ID</span>
+          <div id="planIdDisplay" class="h-11 px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 text-slate-300 flex items-center truncate">—</div>
+        </div>
+      </div>
+      <textarea id="flowSource" class="w-full h-72 bg-slate-950 border border-slate-800 rounded-3xl p-4 text-sm text-slate-100"
+>FLOW "Top customers"
+
+INPUTS
+  file sales_csv
+END INPUTS
+
+STEP load =
+  LOAD CSV FROM sales_csv
+
+STEP valid =
+  FILTER load WHERE amount > 0 AND status == "paid"
+
+STEP totals =
+  GROUP valid BY customer_id
+  AGG amount AS total_amount
+
+STEP sorted =
+  SORT totals BY total_amount DESC
+  TAKE 5
+
+STEP out =
+  OUTPUT sorted AS "Top customers"
+
+END FLOW</textarea>
+      <div class="flex flex-wrap gap-3">
+        <button data-action="parse" class="px-4 py-2 rounded-2xl bg-emerald-400 text-slate-950 font-semibold">Parse</button>
+        <button data-action="plan" class="px-4 py-2 rounded-2xl bg-sky-400 text-slate-950 font-semibold">Plan</button>
+        <button data-action="execute" class="px-4 py-2 rounded-2xl bg-pink-400 text-slate-950 font-semibold">Execute</button>
+        <span id="playgroundStatus" class="text-sm text-slate-300"></span>
+      </div>
+    </section>
+    <section class="grid gap-4 lg:grid-cols-3">
+      <div class="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-white">AST</h2>
+          <span id="warningBadge" class="text-xs text-amber-300"></span>
+        </div>
+        <pre id="astOutput" class="text-xs text-slate-200 whitespace-pre-wrap min-h-[120px]">—</pre>
+      </div>
+      <div class="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
+        <h2 class="text-lg font-semibold text-white">Plan</h2>
+        <pre id="planOutput" class="text-xs text-slate-200 whitespace-pre-wrap min-h-[120px]">—</pre>
+      </div>
+      <div class="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
+        <h2 class="text-lg font-semibold text-white">Execution</h2>
+        <pre id="execOutput" class="text-xs text-slate-200 whitespace-pre-wrap min-h-[120px]">—</pre>
+      </div>
+    </section>
+  </main>
+  <script>
+    const statusEl = document.getElementById('playgroundStatus');
+    const astOutput = document.getElementById('astOutput');
+    const planOutput = document.getElementById('planOutput');
+    const execOutput = document.getElementById('execOutput');
+    const planIdDisplay = document.getElementById('planIdDisplay');
+    const warningBadge = document.getElementById('warningBadge');
+    let latestPlanId = null;
+
+    async function callFlow(path, body) {
+      const apiKey = (document.getElementById('apiKey').value || '').trim();
+      if (!apiKey) throw new Error('Provide your project API key to call FLOW APIs.');
+      const resp = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-voike-api-key': apiKey
+        },
+        body: JSON.stringify(body)
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(text || ('HTTP ' + resp.status));
+      }
+      return resp.json();
+    }
+
+    function stringify(value) {
+      return value ? JSON.stringify(value, null, 2) : '—';
+    }
+
+    async function handleAction(action) {
+      const source = document.getElementById('flowSource').value;
+      statusEl.textContent = action.charAt(0).toUpperCase() + action.slice(1) + '...';
+      try {
+        if (action === 'parse') {
+          const result = await callFlow('/flow/parse', { source, options: { strict: true } });
+          astOutput.textContent = stringify(result.ast);
+          warningBadge.textContent = result.warnings?.length ? result.warnings.join(', ') : '';
+        } else if (action === 'plan') {
+          const result = await callFlow('/flow/plan', { source });
+          latestPlanId = result.id;
+          planIdDisplay.textContent = latestPlanId;
+          planOutput.textContent = stringify(result.graph);
+        } else if (action === 'execute') {
+          if (!latestPlanId) throw new Error('Plan first (no planId).');
+          const mode = document.getElementById('execMode').value;
+          const result = await callFlow('/flow/execute', { planId: latestPlanId, inputs: {}, mode });
+          execOutput.textContent = stringify(result);
+        }
+        statusEl.textContent = 'Ready';
+      } catch (err) {
+        statusEl.textContent = (err && err.message) || 'Failed';
+      }
+    }
+
+    document.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => handleAction(btn.dataset.action));
+    });
+  </script>
+</body>
+</html>`;
+};
+
 const querySchema = z.object({
   kind: z.enum(['sql', 'semantic', 'hybrid']),
   sql: z.string().optional(),
@@ -356,6 +514,76 @@ const flowExecuteSchema = z.object({
   mode: z.enum(['auto', 'sync', 'async']).optional(),
 });
 
+const vpkgBundleSchema = z.object({
+  manifest: z.record(z.any()),
+  bundle: z.string().min(1),
+  metadata: z.record(z.any()).optional(),
+});
+
+const envDescriptorSchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['docker', 'baremetal']).optional(),
+  baseImage: z.string().optional(),
+  command: z.string().optional(),
+  packages: z.array(z.string()).optional(),
+  variables: z.record(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+const orchestratorProjectSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['core', 'app', 'library']).optional(),
+  repo: z.string().optional(),
+  mainVpkgId: z.string().optional(),
+});
+
+const orchestratorGraphSchema = z.object({
+  modules: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        path: z.string().optional(),
+        kind: z.string().optional(),
+        metadata: z.record(z.any()).optional(),
+      }),
+    )
+    .nonempty('Provide at least one module'),
+  dependencies: z
+    .array(
+      z.object({
+        from: z.string().min(1),
+        to: z.string().min(1),
+        type: z.string().optional(),
+      }),
+    )
+    .optional(),
+  endpoints: z
+    .array(
+      z.object({
+        path: z.string().min(1),
+        method: z.string().optional(),
+        module: z.string().optional(),
+        flowRef: z.string().optional(),
+        metadata: z.record(z.any()).optional(),
+      }),
+    )
+    .optional(),
+});
+
+const orchestratorAgentSchema = z.object({
+  name: z.string().min(1),
+  role: z.string().min(1),
+  config: z.record(z.any()).optional(),
+});
+
+const orchestratorTaskSchema = z.object({
+  projectId: z.string().uuid(),
+  kind: z.enum(['feature', 'bugfix', 'refactor', 'migration']).optional(),
+  description: z.string().min(1),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+  metadata: z.record(z.any()).optional(),
+});
+
 const toPublicUser = (user: UserRecord) => ({
   id: user.id,
   email: user.email,
@@ -501,6 +729,10 @@ export type ApiDeps = {
   ai: AiService;
   chat: ChatService;
   flow: FlowService;
+  vpkg: VpkgService;
+  env: EnvironmentService;
+  orchestrator: OrchestratorService;
+  agentOps: AgentOpsService;
 };
 
 export const buildServer = ({
@@ -526,6 +758,10 @@ export const buildServer = ({
   ai,
   chat,
   flow,
+  vpkg,
+  env,
+  orchestrator,
+  agentOps,
 }: ApiDeps & {
   blobgrid: BlobGridService;
   edge: EdgeService;
@@ -544,6 +780,10 @@ export const buildServer = ({
   ai: AiService;
   chat: ChatService;
   flow: FlowService;
+  vpkg: VpkgService;
+  env: EnvironmentService;
+  orchestrator: OrchestratorService;
+  agentOps: AgentOpsService;
 }): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
   const apiKeyHeaderName = 'x-voike-api-key';
@@ -580,6 +820,8 @@ export const buildServer = ({
       ai: ['/ai/atlas', '/ai/ask', '/ai/policy', '/ai/irx/*', '/ai/pipelines/analyze', '/ai/capsule/*'],
       chat: ['/chat (POST)', '/chat/sessions', '/chat/sessions/:id/messages'],
       flow: ['/flow/parse', '/flow/plan', '/flow/execute', '/flow/plans', '/flow/ops'],
+      vpkg: ['/vpkgs (POST, GET)', '/vpkgs/:id/launch', '/vpkgs/download?name=…', '/apps', '/apps/:id'],
+      env: ['/env/descriptors (POST, GET)', '/env/descriptors/:id', '/env/descriptors/:id/resolve'],
     },
     curlExamples: [
       `curl -X POST <VOIKE_ENDPOINT>/waitlist \\
@@ -721,6 +963,9 @@ export const buildServer = ({
 
   app.get('/', async (_request, reply) => {
     reply.type('text/html').send(renderLandingPage(docsPayload));
+  });
+  app.get('/playground/flow-ui', async (_request, reply) => {
+    reply.type('text/html').send(renderFlowPlaygroundPage());
   });
   app.get('/info', async () => ({ ...docsPayload, version: '0.1.0', env: config.env }));
 
@@ -1697,6 +1942,253 @@ export const buildServer = ({
 
   app.get('/flow/ops', { preHandler: requireApiKey }, async () => flow.describeOps());
 
+  app.get('/flow/ops/:name', { preHandler: requireApiKey }, async (request, reply) => {
+    const { name } = request.params as { name: string };
+    const op = flow.describeOp(name);
+    if (!op) {
+      reply.code(404);
+      return { error: `FLOW op ${name} not found` };
+    }
+    return op;
+  });
+
+  app.post('/vpkgs', { preHandler: requireApiKey }, async (request, reply) => {
+    const body = vpkgBundleSchema.parse(request.body || {});
+    try {
+      const pkg = vpkg.publish(request.project!.id, body.manifest, body.bundle);
+      return { pkgId: pkg.pkgId, createdAt: pkg.createdAt };
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/vpkgs', { preHandler: requireApiKey }, async (request) => vpkg.list(request.project!.id));
+
+  app.get('/vpkgs/:pkgId', { preHandler: requireApiKey }, async (request, reply) => {
+    const { pkgId } = request.params as { pkgId: string };
+    const pkg = vpkg.get(pkgId, request.project!.id);
+    if (!pkg) {
+      reply.code(404);
+      return { error: 'VPKG not found' };
+    }
+    return pkg;
+  });
+
+  app.get('/vpkgs/:pkgId/download', { preHandler: requireApiKey }, async (request, reply) => {
+    const { pkgId } = request.params as { pkgId: string };
+    const pkg = vpkg.download(pkgId, request.project!.id);
+    if (!pkg) {
+      reply.code(404);
+      return { error: 'VPKG not found' };
+    }
+    return pkg;
+  });
+
+  app.get('/vpkgs/download', { preHandler: requireApiKey }, async (request, reply) => {
+    const { name, version } = request.query as { name?: string; version?: string };
+    if (!name) {
+      reply.code(400);
+      return { error: 'name query parameter required' };
+    }
+    const pkg = vpkg.findByName(request.project!.id, name, version);
+    if (!pkg) {
+      reply.code(404);
+      return { error: 'VPKG not found' };
+    }
+    return { manifest: pkg.manifest, bundle: pkg.encoded, pkgId: pkg.pkgId };
+  });
+
+  app.post('/vpkgs/:pkgId/launch', { preHandler: requireApiKey }, async (request, reply) => {
+    const { pkgId } = request.params as { pkgId: string };
+    try {
+      return vpkg.launchFromPackage(pkgId, request.project!.id);
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/vpkgs/launch', { preHandler: requireApiKey }, async (request, reply) => {
+    const body = vpkgBundleSchema.parse(request.body || {});
+    try {
+      return vpkg.launchEphemeral(request.project!.id, body.manifest, body.bundle);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/apps', { preHandler: requireApiKey }, async (request) => vpkg.listApps(request.project!.id));
+
+  app.get('/apps/:appId', { preHandler: requireApiKey }, async (request, reply) => {
+    const { appId } = request.params as { appId: string };
+    const appRecord = vpkg.getApp(appId, request.project!.id);
+    if (!appRecord) {
+      reply.code(404);
+      return { error: 'App not found' };
+    }
+    return appRecord;
+  });
+
+  app.post('/orchestrator/projects', async (request, reply) => {
+    const body = orchestratorProjectSchema.parse(request.body || {});
+    try {
+      return await orchestrator.registerProject(body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/orchestrator/projects', async () => orchestrator.listProjects());
+
+  app.get('/orchestrator/projects/:projectId', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const project = await orchestrator.getProject(projectId);
+    if (!project) {
+      reply.code(404);
+      return { error: 'Project not found' };
+    }
+    return project;
+  });
+
+  app.post('/orchestrator/projects/:projectId/graph', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const body = orchestratorGraphSchema.parse(request.body || {});
+    const project = await orchestrator.getProject(projectId);
+    if (!project) {
+      reply.code(404);
+      return { error: 'Project not found' };
+    }
+    try {
+      await orchestrator.upsertProjectGraph(projectId, body);
+      return orchestrator.getProjectGraph(projectId);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/orchestrator/projects/:projectId/graph', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string };
+    const project = await orchestrator.getProject(projectId);
+    if (!project) {
+      reply.code(404);
+      return { error: 'Project not found' };
+    }
+    return orchestrator.getProjectGraph(projectId);
+  });
+
+  app.post('/orchestrator/agents', async (request, reply) => {
+    const body = orchestratorAgentSchema.parse(request.body || {});
+    try {
+      return await orchestrator.registerAgent(body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/orchestrator/agents', async () => orchestrator.listAgents());
+
+  app.post('/orchestrator/tasks', async (request, reply) => {
+    const body = orchestratorTaskSchema.parse(request.body || {});
+    try {
+      return await orchestrator.createTask(body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/orchestrator/tasks', async (request) => {
+    const { projectId } = request.query as { projectId?: string };
+    return orchestrator.listTasks(projectId);
+  });
+
+  app.get('/orchestrator/tasks/:taskId', async (request, reply) => {
+    const { taskId } = request.params as { taskId: string };
+    const task = await orchestrator.getTask(taskId);
+    if (!task) {
+      reply.code(404);
+      return { error: 'Task not found' };
+    }
+    return task;
+  });
+
+  app.post('/orchestrator/tasks/:taskId/run-agent', async (request, reply) => {
+    const { taskId } = request.params as { taskId: string };
+    const body = orchestratorRunAgentSchema.parse(request.body || {});
+    try {
+      const task = await orchestrator.runAgentOnTask(taskId, body.agentId, body.payload);
+      if (!task) {
+        reply.code(404);
+        return { error: 'Task not found' };
+      }
+      return task;
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/agents/fast-answer', { preHandler: requireApiKey }, async (request, reply) => {
+    const body = (request.body || {}) as { question?: string };
+    if (!body.question) {
+      reply.code(400);
+      return { error: 'question is required' };
+    }
+    try {
+      return agentOps.fastAnswer(request.project!.id, { question: body.question });
+    } catch (err) {
+      reply.code(500);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/env/descriptors', { preHandler: requireApiKey }, async (request, reply) => {
+    const body = envDescriptorSchema.parse(request.body || {});
+    try {
+      return env.register(request.project!.id, {
+        name: body.name,
+        kind: body.kind || 'docker',
+        baseImage: body.baseImage,
+        command: body.command,
+        packages: body.packages,
+        variables: body.variables,
+        notes: body.notes,
+      });
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/env/descriptors', { preHandler: requireApiKey }, async (request) =>
+    env.list(request.project!.id),
+  );
+
+  app.get('/env/descriptors/:envId', { preHandler: requireApiKey }, async (request, reply) => {
+    const { envId } = request.params as { envId: string };
+    const record = await env.get(envId, request.project!.id);
+    if (!record) {
+      reply.code(404);
+      return { error: 'Environment not found' };
+    }
+    return record;
+  });
+
+  app.post('/env/descriptors/:envId/resolve', { preHandler: requireApiKey }, async (request, reply) => {
+    const { envId } = request.params as { envId: string };
+    const runner = await env.resolveRunner(request.project!.id, { envId });
+    if (!runner) {
+      reply.code(404);
+      return { error: 'Environment not found' };
+    }
+    return runner;
+  });
+
   app.get('/ops/slos', { preHandler: requireApiKey }, async (request) => {
     const slo = await ops.getProjectSlo(request.project!.id);
     return slo || {};
@@ -1736,3 +2228,7 @@ export const buildServer = ({
 
   return app;
 };
+const orchestratorRunAgentSchema = z.object({
+  agentId: z.string().uuid(),
+  payload: z.record(z.any()).optional(),
+});

@@ -1,0 +1,40 @@
+FLOW "Fast Agentic Answer"
+
+INPUTS
+  text projectId
+  text question
+END INPUTS
+
+STEP split =
+  RUN AGENT "planner" WITH projectId = projectId, question = question
+
+STEP reasoning =
+  RUN AGENT "reasoning" WITH projectId = projectId, segment = split.segments[0]
+
+STEP facts =
+  RUN AGENT "facts" WITH projectId = projectId, segment = split.segments[1]
+
+STEP code =
+  RUN AGENT "code" WITH projectId = projectId, segment = split.segments[2]
+
+STEP critique =
+  RUN AGENT "critique"
+    WITH projectId = projectId,
+         segment = split.segments[3],
+         inputs = { reasoning: reasoning.answer, code: code.answer }
+
+STEP stitch =
+  RUN AGENT "stitcher"
+    WITH projectId = projectId,
+         question = question,
+         parts = [
+           { "id": "reasoning", "answer": reasoning.answer },
+           { "id": "facts", "answer": facts.answer },
+           { "id": "code", "answer": code.answer },
+           { "id": "critique", "answer": critique.answer }
+         ]
+
+STEP output =
+  OUTPUT stitch AS "final answer"
+
+END FLOW

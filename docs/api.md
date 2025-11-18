@@ -143,6 +143,8 @@ The backend injects `projectId` automatically so logging/ledger entries remain s
 - `GET /apix/flows?sessionToken=<uuid>` – list flows tied to a session token.
 - `POST /apix/exec` – execute an APIX op inside a session (`flow.execQuery`, `flow.ingestBatch`, `flow.execVvm` in v1). Body: `{ sessionToken, op, payload }`.
 
+`/apix/schema` also advertises virtual ops for VOIKE FLOW itself: `flow.parse`, `flow.plan`, and `flow.execute`. Agents can validate, compile, and run FLOW purely through APIX (no extra HTTP round-trips) inside a trusted session token.
+
 ### 2.16 Infinity Fabric
 - `GET /infinity/nodes` (builder JWT) – inspect mesh nodes annotated with provider/region/cost/carbon metadata.
 - `GET /infinity/pools` (project API key) – list pools available to the current project (global + project-scoped).
@@ -184,6 +186,44 @@ The backend injects `projectId` automatically so logging/ledger entries remain s
 - `POST /flow/execute` – run a stored plan (sync for tiny flows, async via Grid for larger ones).
 - `GET /flow/plans`, `GET /flow/plans/{planId}`, `DELETE /flow/plans/{planId}` – manage stored plans.
 - `GET /flow/ops` – list supported FLOW op contracts (`LOAD_CSV@1.0`, `INFER@1.0`, etc.).
+- `GET /flow/ops/{name}` – inspect an individual op (category, description, version) to teach agents or UIs.
+- `GET /playground/flow-ui` – Tailwind playground UI that calls the above endpoints via fetch; use it with `VOIKE_PLAYGROUND_API_KEY` or your project key.
+
+### 2.20 Packages & Apps
+- `POST /vpkgs` – publish a `.vpkg` bundle (manifest + base64 payload) into the current project registry.
+- `GET /vpkgs` / `GET /vpkgs/:pkgId` – list or inspect stored bundles.
+- `GET /vpkgs/download?name=<pkg>&version=<semver>` – fetch a bundle for `voike get`; falls back to project-local cache if version omitted.
+- `GET /vpkgs/:pkgId/download` – download a specific bundle by ID.
+- `POST /vpkgs/:pkgId/launch` – launch an app backed by a previously uploaded bundle.
+- `POST /vpkgs/launch` – upload + launch in a single call (used by `voike launch`).
+- `GET /apps`, `GET /apps/{appId}` – inspect launched app instances (status, endpoint).
+
+See `flow/docs/VPKG-spec.md` for bundle format details.
+
+### 2.21 Environment Descriptors
+- `POST /env/descriptors` – register an environment descriptor (`{ name, kind, baseImage?, command?, packages?, variables? }`) scoped to the project.
+- `GET /env/descriptors` / `GET /env/descriptors/{envId}` – list or inspect descriptors.
+- `POST /env/descriptors/{envId}/resolve` – returns the runner plan (mode, command, env vars) tuned to the node’s `VOIKE_NODE_MODE` (`docker` or `baremetal`).
+- Descriptors are re-used by VVM builds/executions and surfaced via the CLI (`voike env add/list`).
+
+### 2.22 Orchestrator (VOIKE 3.0 preview)
+- `POST /orchestrator/projects` – register a project (core/app/lib) so VOIKE can orchestrate its lifecycle.
+- `GET /orchestrator/projects` / `GET /orchestrator/projects/{id}` – inspect registered projects.
+- `POST /orchestrator/projects/{id}/graph` – upload the module/dependency/endpoint graph discovered during a repo scan; `GET /orchestrator/projects/{id}/graph` returns the stored graph.
+- `POST /orchestrator/agents` / `GET /orchestrator/agents` – track agent personas (planner, codegen, tester, infra, etc).
+- `POST /orchestrator/tasks` – create a workflow item (`{ projectId, kind, description, priority }`).
+- `GET /orchestrator/tasks?projectId=...` / `GET /orchestrator/tasks/{id}` – monitor tasks, steps, and statuses.
+- `POST /orchestrator/tasks/{taskId}/run-agent` – run an agent against a task (records a step with agent output; agents are stubs today but plug into Grid jobs later).
+
+These endpoints back the forthcoming `voike task` / `voike evolve` CLI experience and lay the groundwork for fully agentic evolution.
+
+### 2.23 Agent Ops
+- `POST /agents/fast-answer` – run the fast multi-agent FLOW (planner → reasoning → facts → code → critique → stitch). Returns question, segments, taskId and the stitched answer; all steps are logged under `/orchestrator/tasks`.
+- APIX adds ops:
+  - `agent.taskSplit`, `agent.reasoning`, `agent.facts`, `agent.code`, `agent.critique`, `agent.stitcher`, `agent.fastAnswer`.
+  - `source.fetchProject`, `db.introspect`, `db.migrationPlanner`, `db.migrateToVoike`, `vvm.autogenFromProject`, `vpkgs.createFromProject`, `apps.launch`, `agent.onboardExplainer` – used by `flows/onboard-foreign-app.flow` to clone/import apps.
+  - `project.build` – runs the repo build pipeline (currently supports Node/JS installs + builds) and logs outputs under `/orchestrator/tasks`.
+- These are currently stubs that record orchestrator steps and return synthetic answers so FLOWs (e.g., `flows/fast-agentic-answer.flow`, `flows/onboard-foreign-app.flow`) can run end-to-end; they’ll be replaced with real GPT/grid-backed agents in later phases.
 
 ## 3. Health & Reference Endpoints
 - `GET /health`

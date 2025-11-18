@@ -1,0 +1,19 @@
+FLOW "Peacock Deploy Website"
+
+INPUTS
+  text projectId
+  text bundlePath
+END INPUTS
+
+STEP build_vpkg =
+  RUN AGENT "infra" WITH projectId = projectId, action = "build", bundle = bundlePath
+
+STEP launch =
+  RUN JOB "cli.voike_launch"
+    WITH projectId = projectId,
+         vpkgPath = bundlePath
+
+STEP url =
+  OUTPUT launch AS "public url"
+
+END FLOW

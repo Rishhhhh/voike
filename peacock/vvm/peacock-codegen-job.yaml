@@ -1,0 +1,14 @@
+kind: "job"
+name: "peacock-codegen-job"
+env: "node-web-peacock"
+entrypoint:
+  - "node"
+  - "scripts/codegen.js"
+args_schema:
+  prompt: { type: "string" }
+  context: { type: "object" }
+output_schema:
+  bundle_path: { type: "string" }
+  summary: { type: "string" }
+metadata:
+  description: "Invokes Peacock's codegen pipeline (LLM + templates) to emit source files/VPKG fragments"

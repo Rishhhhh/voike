@@ -162,16 +162,31 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
   - `POST /flow/execute` → run plans sync or async (Grid jobs).
   - `GET /flow/plans`, `GET /flow/plans/{id}`, `DELETE /flow/plans/{id}` – manage plans.
   - `GET /flow/ops` – discover available FLOW op contracts.
+- Open `/playground/flow-ui` in your VOIKE deployment to get a Tailwind FLOW playground (paste API key, hit Parse/Plan/Execute, see AST/plan/outputs). Works great with `VOIKE_PLAYGROUND_API_KEY` for demos.
 - LLM agents use the FLOW spec + APIX ops to generate plans automatically.
 
-## 7. CLI & Scripts
+## 7. CLI, Scripts & VPKG
 
 - `npm run lint` – TypeScript type-check (tsc --noEmit).
 - `npm run regression` – TypeScript regression harness (CSV ingest → query → kernel/ledger).
 - `python scripts/voike_regression.py` – full Python regression (ingest, query, MCP, blob, VVM, Ops, APIX, AI, mesh).
 - `python scripts/voike_heartbeat.py` – lightweight Core+AI check (health, query, AI policy/ask, IRX, pipeline analysis).
 - `npm run seed` – optional seeding script (ensures migrations + sample data).
-- CLI (in `cli/`) includes `voike init`, `voike wrap`, `voike build`, `voike deploy`, `voike launch`, etc.
+- CLI (in `cli/`) now includes:
+  - `voike build` – package the current repo into a `.vpkg` bundle (reads `vpkg.yaml`). Add `--publish` to push to your VOIKE project or `--vvm <id>` to trigger the legacy Grid build.
+  - `voike get <name>@<version>` – download a bundle (HTTP or local cache at `~/.voike/registry`) and extract files for rapid bootstrapping.
+  - `voike launch <bundle.vpkg>` – upload a bundle and provision an app (`/apps/:id`) without touching Docker.
+- `voike env add/list` – manage environment descriptors (`/env/descriptors`) that describe Docker or baremetal builds; VOIKE honors `VOIKE_NODE_MODE` to pick the right runner.
+- `voike task create/list/show/run-agent` – interact with the orchestrator (`/orchestrator/tasks`, `/orchestrator/tasks/:id/run-agent`) to seed tasks and trigger planner/codegen/tester agents.
+- `voike peacock build/launch/evolve` – helper commands for the Peacock builder (packages the `peacock/` VPKG, launches it via `/vpkgs/launch`, and invokes FLOW plans for website generation).
+- `voike agent answer --question "..."` – hits `/agents/fast-answer` to demonstrate the fast multi-agent FLOW pipeline.
+- `voike app onboard --project <id> --source-type repo --identifier <giturl>` – reads `flows/onboard-foreign-app.flow`, plans it, executes it, and prints the onboarding summary.
+- Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
+
+### LLM configuration
+- Set `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com`), and `OPENAI_MODEL` (`gpt-5.1` by default) in `.env` to enable real GPT-backed flows (`/agents/fast-answer`, `flows/*` with `RUN AGENT`).
+- See `flow/docs/VPKG-spec.md` for the manifest format and what files are included inside each bundle.
+- Set `VOIKE_NODE_MODE=docker` (default) or `VOIKE_NODE_MODE=baremetal` to control how env descriptors run. Docker mode wraps commands via `docker run`; baremetal executes commands locally with your system packages.
 
 ---
 
@@ -210,4 +225,22 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 4. **Capsules**: create periodic snapshots (`POST /capsules`) before risky deployments.
 5. **Docs**: update `docs/api.md`, `docs/regression_playground.md`, `docs/ai_fabric.md` when adding new endpoints so external teams stay aligned.
 
-With logic solidified across Core, AI, and Chat, the only remaining step is UI polish—surface these APIs in a playground landing page and show the world what VOIKE can do.
+---
+
+## 11. VOIKE 3.0 Orchestrator (Preview)
+
+VOIKE is starting to run itself. The orchestrator now persists a full project graph inside Postgres and exposes `/orchestrator/*` APIs so agents (or humans) can:
+
+- `POST /orchestrator/projects` + `GET /orchestrator/projects/:id` – register/inspect projects (including `voike-core`).
+- `POST /orchestrator/projects/:id/graph` – upload modules, dependencies, and endpoints discovered during a repo scan; `GET /.../graph` returns the map.
+- `POST /orchestrator/agents` / `GET /orchestrator/agents` – declare planner/codegen/tester/infra personas.
+- `POST /orchestrator/tasks` / `GET /orchestrator/tasks` / `GET /orchestrator/tasks/:id` – create and track orchestration runs (each with steps/status/history).
+- `flow/docs/ORCH-FLOW.md` documents the FLOW profile agents follow (`RUN AGENT`, `RUN JOB`, `ASK_AI`, etc.) so Planner/Codegen/Tester/Infra steps stay consistent.
+- `flows/fast-agentic-answer.flow` pairs with `/agents/fast-answer` / `voike agent answer` to demonstrate the multi-agent planner → reasoning → facts → code → critique → stitch loop (all steps logged in `/orchestrator/tasks`).
+- `flows/onboard-foreign-app.flow` encodes the Lovable/Replit/Supabase import pipeline; run it via `voike app onboard` (which uses `/flow/plan` + `/flow/execute`) and watch `/orchestrator/tasks` capture each migration step.
+
+Upcoming phases will attach Capsules to each task, wire CLI helpers (`voike task`, `voike evolve`), and let FLOW drive the entire evolution loop.
+
+Remember the mantra for VOIKE 3.0:
+
+> *The whole development, deployment, evolution of VOIKE runs **through** VOIKE, driven by FLOW, VPKGs, and agents. Humans steer; VOIKE grinds.*

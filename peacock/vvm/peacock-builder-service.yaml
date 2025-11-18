@@ -1,0 +1,14 @@
+kind: "service"
+name: "peacock-builder-service"
+env: "node-web-peacock"
+entrypoint:
+  - "node"
+  - "server.js"
+workdir: "/opt/voike/apps/peacock"
+port: 4173
+healthcheck:
+  path: "/health"
+  intervalSeconds: 10
+  timeoutSeconds: 3
+metadata:
+  description: "Peacock AIX UI + API for prompt-driven app building"

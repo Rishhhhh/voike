@@ -111,11 +111,17 @@ Sync response includes outputs and metrics; async response returns `{ "jobId": "
 ### 1.5 Introspection
 
 - `GET /flow/ops`
-- `GET /flow/op/{name}`
+- `GET /flow/ops/{name}`
 
 ## 2. APIX Integration
 
 `/apix/schema` now includes ops `flow.parse`, `flow.plan`, `flow.execute`, each with typed payloads for agents to call.
+
+Each op mirrors the HTTP contract:
+
+- `flow.parse` – `{ source, options? }` → parse result.
+- `flow.plan` – `{ source }` → stored plan (IDs scoped per project).
+- `flow.execute` – `{ planId, inputs?, mode? }` → synchronous or asynchronous execution payload.
 
 ## 3. Security & Multi-Tenancy
 

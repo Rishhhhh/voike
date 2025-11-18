@@ -1,0 +1,16 @@
+name: "node-web-peacock"
+kind: "container"
+image: "registry.voike.ai/envs/node:20-web"
+runtime: "node"
+version: "20"
+resources:
+  cpu: "1"
+  memory: "1Gi"
+ports:
+  - 4173
+setup:
+  - "pnpm install --filter peacock-ui..."
+  - "pnpm run build"
+baremetal:
+  command: "pnpm install && pnpm run build"
+  notes: "When VOIKE_NODE_MODE=baremetal, ensure Node 20 + pnpm are on PATH."

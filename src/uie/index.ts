@@ -75,7 +75,13 @@ export class UniversalIngestionEngine {
       );
       telemetryBus.publish({
         type: 'ingest.completed',
-        payload: { jobId, strategy: schema.strategy, projectId },
+        payload: {
+          jobId,
+          strategy: schema.strategy,
+          projectId,
+          table: schema.tableName,
+          rows: structured.rows.length,
+        },
       });
       return { jobId, table: schema.tableName };
     } catch (err) {

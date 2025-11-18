@@ -1,0 +1,62 @@
+FLOW "Onboard Foreign App to VOIKE"
+
+INPUTS
+  text projectId
+  text appSourceType
+  text appIdentifier
+  text dbType
+  text dbConnectionInfo
+END INPUTS
+
+STEP fetch_source =
+  RUN AGENT "source.fetchProject"
+    WITH sourceType = appSourceType,
+         identifier = appIdentifier
+
+STEP introspect_db =
+  RUN AGENT "db.introspect"
+    WITH dbType = dbType,
+         connection = dbConnectionInfo
+
+STEP plan_migration =
+  RUN AGENT "db.migrationPlanner"
+    WITH schema = introspect_db.schema
+
+STEP migrate_db =
+  RUN AGENT "db.migrateToVoike"
+    WITH plan = plan_migration.plan,
+         connection = dbConnectionInfo
+
+STEP generate_vvm =
+  RUN AGENT "vvm.autogenFromProject"
+    WITH repoPath = fetch_source.repoPath,
+         language = fetch_source.language,
+         framework = fetch_source.framework
+
+STEP build_project =
+  RUN AGENT "project.build"
+    WITH repoPath = fetch_source.repoPath
+
+STEP build_vpkg =
+  RUN AGENT "vpkgs.createFromProject"
+    WITH repoPath = fetch_source.repoPath,
+         envDescriptor = generate_vvm.envDescriptorPath,
+         vvmDescriptor = generate_vvm.vvmDescriptorPath,
+         metadata = { name: appIdentifier, sourcePlatform: appSourceType }
+
+STEP launch =
+  RUN AGENT "apps.launch"
+    WITH vpkgId = build_vpkg.vpkgId,
+         serviceName = generate_vvm.serviceName
+
+STEP explain =
+  RUN AGENT "agent.onboardExplainer"
+    WITH appSourceType = appSourceType,
+         appIdentifier = appIdentifier,
+         dbType = dbType,
+         publicUrl = launch.publicUrl
+
+STEP output =
+  OUTPUT explain AS "summary"
+
+END FLOW

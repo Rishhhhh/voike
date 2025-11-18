@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import {
   parseFlowSource,
   buildFlowPlan,
@@ -5,13 +6,17 @@ import {
   type FlowPlan,
   type ParseOptions,
   type ParseResult,
+  type FlowRuntimeContext,
 } from '@flow/index';
 
 export type StoredFlowPlan = FlowPlan & { projectId: string };
 export type FlowExecutionMode = 'auto' | 'sync' | 'async';
 
+export type FlowAgentHandler = (agent: string, payload: Record<string, unknown>, context: { projectId: string; runId: string }) => Promise<any> | any;
+
 export class FlowService {
   private plans = new Map<string, StoredFlowPlan>();
+  constructor(private agentHandler?: FlowAgentHandler) {}
 
   parse(source: string, options?: ParseOptions): ParseResult {
     return parseFlowSource(source, options);
@@ -52,11 +57,25 @@ export class FlowService {
     if (!plan) {
       throw new Error('Flow plan not found');
     }
-    return executeFlowPlan(plan, inputs, mode);
+    const runId = crypto.randomUUID();
+    const context: FlowRuntimeContext = {
+      projectId,
+      runId,
+      agentRunner: this.agentHandler
+        ? (agent, payload) => this.agentHandler!(agent, payload, { projectId, runId })
+        : undefined,
+    };
+    return executeFlowPlan(plan, inputs, mode, context);
   }
 
   describeOps() {
     return FLOW_OPS;
+  }
+
+  describeOp(name: string) {
+    if (!name) return null;
+    const normalized = name.trim().toUpperCase();
+    return FLOW_OP_LOOKUP.get(normalized) || null;
   }
 }
 
@@ -80,3 +99,5 @@ const FLOW_OPS = [
   { name: 'STORE', version: '1.0', category: 'io', description: 'Persist table/model artifacts.' },
   { name: 'CUSTOM', version: '1.0', category: 'fallback', description: 'Custom user-defined logic.' },
 ];
+
+const FLOW_OP_LOOKUP = new Map(FLOW_OPS.map((op) => [op.name, op]));

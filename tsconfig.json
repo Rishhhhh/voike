@@ -41,8 +41,14 @@
       "@federation/*": ["src/federation/*"],
       "@ai/*": ["src/ai/*"],
       "@chat/*": ["src/chat/*"],
-      "@flow/*": ["flow/src/*"]
+      "@flow/*": ["flow/src/*"],
+      "@vasm/*": ["vasm/src/*"],
+      "@vpkg/*": ["src/vpkg/*"],
+      "@env/*": ["src/env/*"],
+      "@orchestrator/*": ["src/orchestrator/*"],
+      "@agents/*": ["src/agents/*"],
+      "@onboard/*": ["src/onboard/*"]
     }
   },
-  "include": ["src", "flow/src", "tests"]
+  "include": ["src", "flow/src", "vasm/src", "tests"]
 }

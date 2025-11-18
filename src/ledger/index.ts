@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { DEFAULT_PROJECT_ID } from '@auth/index';
+import { telemetryBus } from '@telemetry/index';
 
 export type LedgerEntry = {
   seedState: Record<string, unknown>;
@@ -79,6 +80,14 @@ export const logKernelDecision = async (pool: Pool, entry: LedgerEntry, projectI
       JSON.stringify(entry.meta ?? {}),
     ],
   );
+  telemetryBus.publish({
+    type: 'ledger.appended',
+    payload: {
+      projectId,
+      chosen: entry.chosen,
+      meta: entry.meta || {},
+    },
+  });
 };
 
 export const getLedgerEntries = async (pool: Pool, projectId: string, limit = 20) => {

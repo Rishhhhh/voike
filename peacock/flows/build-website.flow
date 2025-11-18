@@ -1,0 +1,22 @@
+FLOW "Peacock Build Website"
+
+INPUTS
+  text projectId
+  text prompt
+END INPUTS
+
+STEP planner =
+  RUN AGENT "planner" WITH projectId = projectId, brief = prompt
+
+STEP codegen =
+  RUN AGENT "codegen" WITH projectId = projectId, plan = planner, prompt = prompt
+
+STEP bundle =
+  RUN JOB "peacock-codegen-job"
+    WITH prompt = prompt,
+         context = { plan: planner, agentOutput: codegen }
+
+STEP output =
+  OUTPUT bundle AS "codegen bundle"
+
+END FLOW

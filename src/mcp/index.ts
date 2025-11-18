@@ -6,6 +6,8 @@ import { runVASVEL } from '@semantic/vasvel';
 import { Kernel9 } from '@kernel9/index';
 import { DAIEngine } from '@semantic/dai';
 import { getVirtualEnergy } from '@ledger/index';
+import { BlobGridService } from '@blobgrid/index';
+import { VvmService } from '@vvm/index';
 
 export type McpContext = {
   sessionId: string;
@@ -51,6 +53,8 @@ export const createDefaultToolRegistry = async (
   uie: UniversalIngestionEngine,
   kernel9: Kernel9,
   dai: DAIEngine,
+  blobgrid?: BlobGridService,
+  vvm?: VvmService,
 ) => {
   const registry = new ToolRegistry();
 
@@ -141,6 +145,71 @@ export const createDefaultToolRegistry = async (
       state: z.any(),
     }),
     handler: async (_input, context) => ({ state: await dai.getState(context.projectId) }),
+  });
+  registry.register({
+    name: 'vvm.create',
+    description: 'Create VVM descriptor from YAML',
+    inputSchema: z.object({ descriptor: z.string() }),
+    outputSchema: z.object({ vvmId: z.string(), state: z.string() }),
+    handler: async (input, context) => {
+      if (!vvm) throw new Error('VVM unavailable');
+      const descriptor = await vvm.createDescriptor(context.projectId, input.descriptor);
+      return { vvmId: descriptor.vvmId, state: descriptor.state };
+    },
+  });
+
+  registry.register({
+    name: 'vvm.build',
+    description: 'Trigger VVM build',
+    inputSchema: z.object({ vvmId: z.string() }),
+    outputSchema: z.object({ artifactId: z.string(), jobId: z.string() }),
+    handler: async (input, context) => {
+      if (!vvm) throw new Error('VVM unavailable');
+      const build = await vvm.requestBuild(input.vvmId, context.projectId);
+      return build;
+    },
+  });
+
+  registry.register({
+    name: 'blob.put',
+    description: 'Store base64 blob in BlobGrid',
+    inputSchema: z.object({
+      base64: z.string(),
+      filename: z.string().optional(),
+      mediaType: z.string().optional(),
+    }),
+    outputSchema: z.object({
+      blobId: z.string(),
+      manifest: z.any(),
+    }),
+    handler: async (
+      input: { base64: string; filename?: string; mediaType?: string },
+      context: McpContext,
+    ) => {
+      if (!blobgrid) throw new Error('BlobGrid unavailable');
+      const buffer = Buffer.from(input.base64, 'base64');
+      const manifest = await blobgrid.createBlob(buffer, {
+        projectId: context.projectId,
+        filename: input.filename,
+        mediaType: input.mediaType,
+      });
+      return { blobId: manifest.blobId, manifest };
+    },
+  });
+
+  registry.register({
+    name: 'blob.getManifest',
+    description: 'Fetch BlobGrid manifest',
+    inputSchema: z.object({ blobId: z.string() }),
+    outputSchema: z.object({ manifest: z.any() }),
+    handler: async (input: { blobId: string }, context: McpContext) => {
+      if (!blobgrid) throw new Error('BlobGrid unavailable');
+      const manifest = await blobgrid.getManifest(input.blobId);
+      if (!manifest || manifest.projectId !== context.projectId) {
+        throw new Error('Blob not found or unauthorized');
+      }
+      return { manifest };
+    },
   });
   return registry;
 };

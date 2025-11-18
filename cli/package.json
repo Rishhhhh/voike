@@ -1,0 +1,28 @@
+{
+  "name": "voike-cli",
+  "version": "0.1.0",
+  "description": "VOIKE developer CLI",
+  "main": "dist/index.js",
+  "bin": {
+    "voike": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "inquirer": "^9.3.8",
+    "node-fetch": "^3.3.2",
+    "ora": "^7.0.1",
+    "yaml": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  },
+  "type": "module"
+}

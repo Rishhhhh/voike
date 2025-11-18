@@ -38,7 +38,10 @@ export type TelemetryEvent =
   | { type: 'ingest.completed'; payload: Record<string, unknown> & { projectId?: string } }
   | { type: 'query.executed'; payload: Record<string, unknown> & { projectId?: string } }
   | { type: 'kernel.energyUpdated'; payload: Record<string, unknown> & { projectId?: string } }
-  | { type: 'dai.updateSuggested'; payload: Record<string, unknown> & { projectId?: string } };
+  | { type: 'dai.updateSuggested'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'blob.created'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'grid.job.submitted'; payload: Record<string, unknown> & { projectId?: string } }
+  | { type: 'ledger.appended'; payload: Record<string, unknown> & { projectId?: string } };
 
 class TelemetryBus extends EventEmitter {
   publish(event: TelemetryEvent) {

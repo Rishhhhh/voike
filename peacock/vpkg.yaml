@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: VPKG
+metadata:
+  name: "peacock-aix"
+  version: "0.1.0"
+  description: "Prompt-driven application builder powered by VOIKE FLOW/VASM/VVM."
+  tags: ["builder", "flow", "voike"]
+flow:
+  files:
+    - flows/build-website.flow
+    - flows/deploy-website.flow
+vvm:
+  descriptors:
+    - vvm/peacock-builder-service.yaml
+    - vvm/peacock-codegen-job.yaml
+env:
+  descriptors:
+    - env/node-web-peacock.yaml
+spec:
+  files:
+    - spec/voike-api.md
+services:
+  - name: "builder"
+    vvm: "peacock-builder-service"
+    route:
+      pathPrefix: "/"
+      auth: "public"
