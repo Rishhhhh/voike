@@ -108,6 +108,16 @@ The backend injects `projectId` automatically so logging/ledger entries remain s
 - `POST /grid/jobs` – submit jobs (`llm.infer`, `media.transcode`, `query.analytics`, custom). VOIKE schedules them across nodes maximizing IRX = (Utility × Locality × Resilience) / (Cost × Energy). Include `preferLocalEdge` or `preferVillage` flags to bias toward edge/village nodes.
 - `GET /grid/jobs/{jobId}` – status, logs, result references.
 
+Example Fibonacci job (used by `scripts/voike_regression.py --grid-fib`):
+```json
+POST /grid/jobs
+{
+  "type": "custom",
+  "params": { "task": "fib", "n": 2000 }
+}
+```
+Scheduler nodes compute `fib(n)` using BigInt arithmetic and persist the result to `grid_jobs.result.fib`.
+
 ### 2.10 Playground APIs
 - `POST /playground/sessions` – bootstrap a dev sandbox tied to your project.
 - `POST /playground/snippets` – save code cells that mix `/query`, `/ingest`, `/blobs`, `/grid/jobs`.

@@ -7,6 +7,7 @@ INPUTS
   text regressionQuestion
   text vpkgManifestPath optional
   text serviceName optional
+  number fibIndex optional
 END INPUTS
 
 STEP ingest_plan =
@@ -37,6 +38,20 @@ STEP ai_answer =
     WITH {
       projectId = projectId,
       question = regressionQuestion
+    }
+
+STEP fib_job =
+  APX_EXEC "grid.submitFib"
+    WITH {
+      projectId = projectId,
+      n = fibIndex
+    }
+
+STEP fib_result =
+  APX_EXEC "grid.awaitJob"
+    WITH {
+      projectId = projectId,
+      jobId = fib_job.jobId
     }
 
 STEP capsule =
@@ -74,7 +89,8 @@ STEP log =
     aiAnswer = ai_answer.answer,
     capsuleId = capsule.capsuleId,
     serviceEndpoint = deploy.endpoint,
-    health = health.status
+    health = health.status,
+    fibValue = fib_result.value
   }
 
 END FLOW

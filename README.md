@@ -178,6 +178,7 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - **VVM descriptors** wrap external runtimes (Python, C++, TF Serving, etc.) with env requirements and IO schemas.
 - **Agents** contribute FLOW by calling APIX (`flow.parse/plan/execute`, `agent.*` ops) and logging to `/orchestrator/tasks`.
 - **Capsules** snapshot FLOW + plans + artifacts for reproducibility.
+- `flows/voike-regression.flow` is a codified version of the full regression run: it ingests sample data, runs hybrid queries, dispatches a grid Fibonacci job, builds VPKGs, deploys services, and captures a capsule so you can replay the entire smoke test through VOIKE itself.
 
 ### Goals
 - **Universal**: any language/framework becomes a FLOW plan + VPKG deployment.
@@ -201,6 +202,7 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - `voike peacock build/launch/evolve` – helper commands for the Peacock builder (packages the `peacock/` VPKG, launches it via `/vpkgs/launch`, and invokes FLOW plans for website generation).
 - `voike agent answer --question "..."` – hits `/agents/fast-answer` to demonstrate the fast multi-agent FLOW pipeline.
 - `voike app onboard --project <id> --source-type repo --identifier <giturl>` – reads `flows/onboard-foreign-app.flow`, plans it, executes it, and prints the onboarding summary.
+- `python scripts/voike_regression.py --grid-fib 2000` – end-to-end regression harness that now includes a grid Fibonacci job (the script can be wrapped into a VPKG via `voike wrap scripts/voike_regression.py` and launched like any other workload).
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 
 ### LLM configuration

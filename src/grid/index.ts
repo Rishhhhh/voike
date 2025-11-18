@@ -114,6 +114,9 @@ export class GridService {
         case 'vvm.exec':
           result = await this.runVvmExec(job);
           break;
+        case 'custom':
+          result = await this.runCustomJob(job);
+          break;
         default:
           result = { echo: job.params };
       }
@@ -149,6 +152,26 @@ export class GridService {
     const prompt = job.params?.prompt || '';
     const maxTokens = job.params?.maxTokens || 256;
     return this.buildLLMResponse(`Grid(${config.node.id}) synthetic response`, prompt, maxTokens);
+  }
+
+  private async runCustomJob(job: any) {
+    const task = job.params?.task;
+    if (task === 'fib') {
+      const n = Number(job.params?.n ?? 0);
+      return { fib: this.computeFib(Math.max(0, Math.floor(n))) };
+    }
+    return { echo: job.params };
+  }
+
+  private computeFib(n: number) {
+    let a = 0n;
+    let b = 1n;
+    for (let i = 0; i < n; i += 1) {
+      const next = a + b;
+      a = b;
+      b = next;
+    }
+    return a.toString();
   }
 
   private buildLLMResponse(prefix: string, prompt: string, maxTokens: number) {

@@ -118,6 +118,16 @@ def wait_for_ingest(job_id: str, attempts: int = 30, delay_seconds: float = 1.0)
     raise TimeoutError(f"Ingest job {job_id} did not finish after {attempts} attempts.")
 
 
+def wait_for_grid_job(job_id: str, attempts: int = 120, delay_seconds: float = 1.0) -> Any:
+    for _ in range(attempts):
+        job = request("GET", f"/grid/jobs/{job_id}")
+        status = job.get("status")
+        if status in ("SUCCEEDED", "FAILED"):
+            return job
+        time.sleep(delay_seconds)
+    raise TimeoutError(f"Grid job {job_id} did not finish after {attempts} attempts.")
+
+
 def run_fibonacci_sql(n: int = 100000) -> str:
     sql = f"""
     WITH RECURSIVE fib(idx, a, b) AS (
@@ -137,6 +147,37 @@ def run_fibonacci_sql(n: int = 100000) -> str:
     if not rows:
         raise RuntimeError("Fibonacci query returned no rows.")
     return rows[0]["fib_value"]
+
+
+def fibonacci_local(n: int) -> str:
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return str(a)
+
+
+def run_grid_fibonacci_job(n: int) -> None:
+    banner(f"Grid Fibonacci job n={n}")
+    payload = {
+        "type": "custom",
+        "params": {"task": "fib", "n": n},
+    }
+    resp = request("POST", "/grid/jobs", json=payload)
+    job_id = resp["jobId"]
+    report("Grid job submitted", detail=f"jobId={job_id}")
+    job = wait_for_grid_job(job_id)
+    status = job.get("status")
+    if status != "SUCCEEDED":
+        raise RuntimeError(f"Grid job {job_id} ended with status {status}")
+    result = (job.get("result") or {}).get("fib")
+    report("Grid Fibonacci result", detail=str(result))
+    local = fibonacci_local(n)
+    if result is None:
+        report("Grid Fibonacci comparison", status="WARN", detail="job returned no fib result")
+    elif str(result) != local:
+        report("Grid Fibonacci mismatch", status="WARN", detail=f"grid={result} local={local}")
+    else:
+        report("Grid Fibonacci validated", detail=local)
 
 
 def mcp_execute(name: str, input_payload: Dict[str, Any]) -> Any:
@@ -719,6 +760,9 @@ def run_regression(args: argparse.Namespace) -> None:
         fib_val = run_fibonacci_sql(args.fibonacci)
         report(f"fib({args.fibonacci})", detail=fib_val)
 
+    if args.grid_fib:
+        run_grid_fibonacci_job(args.grid_fib)
+
     # Security regression: missing API key should 401.
     resp = requests.get(f"{BASE_URL}/kernel/state", timeout=10)
     if resp.status_code != 401:
@@ -773,6 +817,12 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         type=int,
         default=100000,
         help="Run an additional Fibonacci SQL query at the given index.",
+    )
+    parser.add_argument(
+        "--grid-fib",
+        type=int,
+        default=2000,
+        help="Submit a grid job that computes Fibonacci(n). Set to 0 to skip.",
     )
     return parser.parse_args(argv)
 
