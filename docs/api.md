@@ -1,68 +1,57 @@
-# VOIKE-X API Guide
+# VOIKE-X API Brief
 
-Headless backend only—no GUI included. Every user flow (waitlist, provisioning, ingestion, query, MCP orchestration) is driven through the HTTP+WebSocket surface described here. Schemas for automation live in `docs/openapi.yaml`.
+Everything in VOIKE is exposed through HTTP + WebSocket endpoints so frontend playgrounds, SDKs, or MCP agents can call the same contracts. This guide mirrors `README.md` and already documents VOIKE V2.0 subsystems so client teams are unblocked even while modules roll out.
 
-## 0. Landing + Discovery
-| Method | Path | Auth | Purpose |
+## 0. Discovery Surface
+| Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| `GET` | `/` | none | Tailwind landing page with quickstart steps, headers, and curl-ready snippets |
-| `GET` | `/info` | none | JSON metadata mirroring the landing page for programmatic use |
-| `GET` | `/health` | none | `{ status, db, kernel }` quick probe |
+| `GET` | `/` | none | Tailwind landing page – reuse inside your docs/playground |
+| `GET` | `/info` | none | JSON mirror of `/` (quickstart steps, curl samples, exposed playground key) |
+| `GET` | `/health` | none | `{ status, db, kernel }` probe for uptime checks |
+| `GET` | `/genesis` | admin | Returns the active Genesis doc (clusterId, bootstrap, replication) |
 
-The landing page lists whichever `PLAYGROUND_API_KEY` you configured. Use it for docs/testing or hide it by omitting the env var.
+Setting `PLAYGROUND_API_KEY` creates a demo project and surfaces that key on `/` + `/info` for public sandboxes.
 
-## 1. Authentication & Control Plane
-- **Provisioning header**: `X-VOIKE-ADMIN-TOKEN` (value = `ADMIN_TOKEN`). Required for waitlist approvals plus organization/project/API-key management.
-- **Project header**: `X-VOIKE-API-Key`. Every ingestion/query/kernels/telemetry route requires this key.
-- **Playground key (optional)**: Set `PLAYGROUND_API_KEY` to auto-create a “Playground Project” and expose that key on `/` + `/info`. Great for public sandboxes, docs, or SDK defaults.
-- If any of the above env vars are unset, VOIKE-X falls back to the random-looking defaults shown in `.env.example` and logs a warning during boot so Docker-based demos keep working.
+## 1. Authentication Model
+- `X-VOIKE-API-Key` – required on ingestion, query, kernel, BlobGrid, capsules, metrics, MCP, and WebSocket calls.
+- `X-VOIKE-ADMIN-TOKEN` – required on provisioning endpoints (`/waitlist` approvals, organizations, projects, API keys). There is **no** admin username/password flow.
+- `Authorization: Bearer <token>` – builder-only endpoints (`/auth/*`, `/user/*`) use JWTs once a waitlist entry is approved.
 
-### Waitlist (public)
-- `POST /waitlist`
-```json
-{
-  "email": "founder@example.com",
-  "name": "Ada"
-}
-```
-Returns `{ "status": "pending", "entry": {...} }`. Duplicate emails just refresh the record.
+If env vars are missing in non-prod setups, VOIKE falls back to the defaults in `.env.example` so Docker demos still work.
 
-### Admin endpoints (require `X-VOIKE-ADMIN-TOKEN`)
-| Method | Path | Body | Result |
+### Waitlist + Admin APIs
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST /waitlist` | Public signup (`{ email, name? }`). Returns `{ status, entry }`. |
+| `GET /admin/waitlist` | List entries (pending + approved). Requires admin token. |
+| `POST /admin/waitlist/{id}/approve` | Provision org → project → API key for the entry. |
+| `GET /admin/organizations` / `POST /admin/organizations` | Enumerate or create orgs. |
+| `POST /admin/projects` | Create project + API key (auto-creates org when needed). |
+| `POST /admin/organizations/{orgId}/projects` | Add project/key inside existing org. |
+| `POST /admin/projects/{projectId}/api-keys` | Mint additional API keys. |
+
+Approving a waitlist entry marks the `users` row as `approved` but **does not** set a password. Builders finalize onboarding through the next section.
+
+### Builder Self-Service (JWT)
+| Method | Path | Payload | Purpose |
 | --- | --- | --- | --- |
-| `GET` | `/admin/waitlist` | – | List pending/approved entries |
-| `POST` | `/admin/waitlist/{id}/approve` | `{ "organizationName": "...", "projectName": "...", "keyLabel": "..." }` optional | Provisions organization → project → API key, updates entry |
-| `GET` | `/admin/organizations` | – | List organizations |
-| `POST` | `/admin/organizations` | `{ "name": "Acme", "slug": "acme" }` | Create organization |
-| `POST` | `/admin/projects` | `{ "projectName":"demo","organizationId":"uuid" }` or include `"organizationName"` to auto-create | Create project + API key |
-| `POST` | `/admin/organizations/{orgId}/projects` | `{ "projectName":"analytics","keyLabel":"prod" }` | Add project+key inside org |
-| `POST` | `/admin/projects/{projectId}/api-keys` | `{ "label":"read-only" }` optional | Adds additional key for same project |
-
-Approving a waitlist entry does **not** auto-set a password. The backend provisions the organization → project → API key tuple and marks the related `users` row as approved. Builders then call `/auth/check-whitelist` → `/auth/setup-password` to finalize their login before using `/user/*`.
-
-### Builder auth & self-service (JWT bearer)
-Once approved, a waitlist entry becomes a `users` row. Builders set a password once, then authenticate with `Authorization: Bearer <token>`:
-
-| Method | Path | Body | Result |
-| --- | --- | --- | --- |
-| `POST` | `/auth/check-whitelist` | `{ "email": "founder@example.com" }` | Returns status + whether password is set |
-| `POST` | `/auth/setup-password` | `{ "email": "founder@example.com", "password": "..." }` | First-time password creation (approved entries only) |
-| `POST` | `/auth/login` | `{ "email": "...", "password": "..." }` | Issues JWT (`expiresIn = JWT_TTL_SECONDS`) |
-| `GET` | `/user/profile` | – | Returns user info + owned orgs/projects |
-| `GET` | `/user/organizations` | – | List organizations owned by the builder |
-| `GET` | `/user/projects` | – | List builder-owned projects |
-| `POST` | `/user/projects` | `{ "projectName": "...", "organizationId?": "...", "organizationName?": "...", "keyLabel?": "..." }` | Create project + API key inside builder-owned org |
-| `POST` | `/user/projects/{id}/api-keys` | `{ "label":"staging" }` optional | Mint additional keys for a builder-owned project |
+| `POST` | `/auth/check-whitelist` | `{ email }` | Returns status + whether password exists. |
+| `POST` | `/auth/setup-password` | `{ email, password, name? }` | One-time password creation for approved entries. |
+| `POST` | `/auth/login` | `{ email, password }` | Issues JWT (`expiresIn = JWT_TTL_SECONDS`). |
+| `GET` | `/user/profile` | – | User info + owned orgs/projects (requires bearer token). |
+| `GET` | `/user/organizations` | – | All organizations owned by the builder. |
+| `GET` | `/user/projects` | – | Builder-owned projects. |
+| `POST` | `/user/projects` | `{ projectName, organizationId? | organizationName?, keyLabel? }` | Create project + key without admin token. |
+| `POST` | `/user/projects/{id}/api-keys` | `{ label? }` | Additional builder-scoped keys. |
 
 ## 2. Project APIs (require `X-VOIKE-API-Key`)
 
 ### 2.1 Ingestion
-- `POST /ingest/file` (multipart):
-  - Fields: `file` (binary), optional `logicalName`.
-  - Response: `{ "jobId": "uuid", "table": "normalized_table" }`.
-- `GET /ingest/{jobId}` → Job row with `status`, `summary` (project scoped).
+- `POST /ingest/file` (multipart)  
+  Fields: `file`, optional `logicalName`. Response `{ jobId, table }`.
+- `GET /ingest/{jobId}` → Poll job summary/status.
 
-### 2.2 Query
+### 2.2 Query & Hybrid Reasoning
 `POST /query`
 ```json
 {
@@ -72,27 +61,15 @@ Once approved, a waitlist entry becomes a `users` row. Builders set a password o
   "filters": { "entity_type": "profile" }
 }
 ```
-Response:
-```json
-{
-  "rows": [...],
-  "meta": {
-    "engine": "hybrid",
-    "latencyMs": 12,
-    "correctedQuery": { ... },
-    "kernelTraceId": "vector-engine"
-  }
-}
-```
-Pipeline: VARVQCQC corrects query → VASVEL chooses plan → VDB executes → ledger entry + DAI update recorded per project.
+Response includes rows plus `meta.engine`, `meta.latencyMs`, `meta.correctedQuery`, and `meta.kernelTraceId`. Kernel-8 corrects and plans, Kernel-9 participates when routed via `route_hint`.
 
-### 2.3 Kernel & Ledger
-- `GET /kernel/state` → `{ energy, dai, limits }` for the calling project.
-- `GET /ledger/recent` → 20 most recent Truth Ledger entries (per project).
-- `GET /ledger/{id}` → A specific ledger entry if it belongs to that project.
+### 2.3 Kernel + Ledger
+- `GET /kernel/state` – `{ energy, dai, limits }` snapshot.
+- `GET /ledger/recent` – 20 most recent Truth Ledger entries scoped to the key.
+- `GET /ledger/{id}` – Fetch a single ledger entry (must belong to same project).
 
 ### 2.4 MCP Tools
-- `GET /mcp/tools` → list of registered tools (metadata only).
+- `GET /mcp/tools` – metadata for registered tools.
 - `POST /mcp/execute`
 ```json
 {
@@ -101,48 +78,169 @@ Pipeline: VARVQCQC corrects query → VASVEL chooses plan → VDB executes → l
   "context": { "sessionId": "cli-demo" }
 }
 ```
-Context automatically injects `projectId` from the API key so kernels/logging remain scoped.
+The backend injects `projectId` automatically so logging/ledger entries remain scoped.
 
-### 2.5 Metrics & Events
-- `GET /metrics` → JSON gauge snapshot (latency, counters, kernel energy, ingestion counts, etc.).
-- `GET /events` (WebSocket) → connect with `X-VOIKE-API-Key` header; streams:
+### 2.5 Metrics + Streaming
+- `GET /metrics` – Prom-style JSON gauges (latency, counters, kernel energy, ingest counts).
+- `GET /events` (WebSocket) – Send `X-VOIKE-API-Key` header. Streams:
   - `ingest.completed`
   - `query.executed`
   - `kernel.energyUpdated`
   - `dai.updateSuggested`
-Each payload contains `projectId` so you can multiplex multiple projects from one listener if needed.
+  - Custom serverless events
 
-## 3. Health & Info
-- `GET /health` → simple check verifying DB connectivity + VAR energy.
-- `GET /info` → JSON version of the landing page, including quickstart steps, endpoint groups, and three ready-to-run curl snippets.
+### 2.6 BlobGrid
+- `POST /blobs` – upload blob, choose replication or erasure coding, receive manifest (chunk CIDs + schema).
+- `GET /blobs/{blobId}/manifest` – chunk metadata, coding info, locality hints.
+- `GET /blobs/{blobId}/stream` – server stitches chunks from the grid (online-first) but honors cached/offline chunks if present; once WAN reconnects, latest manifest wins to avoid stale caches.
 
-## 4. Curl Cheatsheet
+### 2.7 Edge / Village APIs
+- `POST /edge/sync` – exchange CRDT deltas between edge node and backbone. v6 adds edge embedding sync so each node maintains `edge_embeddings` (tables + blobs summarized offline). Response includes merged CRDT records plus the node’s local embedding view.
+- `GET /edge/cache` – inspect what objects are pinned locally (blobs, rows, embeddings).
+- `GET /edge/profile` – returns node persona metadata (role, roles[], region, bandwidthClass) so dashboards/agents can adapt.
+- `POST /edge/llm` – consults the local embedding cache first (offline mode) and returns the snippets it used. If nothing matches, it automatically schedules a mesh/grid inference and returns that completion while noting the empty local context.
+
+### 2.8 IRX Policy Surface
+- `GET /irx/objects?type=blob&projectId=...` – inspect IRX scores and placement suggestions.
+- `POST /irx/hints` – optional hints (`{ objectId, utility, localityBoost }`) to nudge IRX scoring (validated + logged).
+
+### 2.9 Grid Compute
+- `POST /grid/jobs` – submit jobs (`llm.infer`, `media.transcode`, `query.analytics`, custom). VOIKE schedules them across nodes maximizing IRX = (Utility × Locality × Resilience) / (Cost × Energy). Include `preferLocalEdge` or `preferVillage` flags to bias toward edge/village nodes.
+- `GET /grid/jobs/{jobId}` – status, logs, result references.
+
+### 2.10 Playground APIs
+- `POST /playground/sessions` – bootstrap a dev sandbox tied to your project.
+- `POST /playground/snippets` – save code cells that mix `/query`, `/ingest`, `/blobs`, `/grid/jobs`.
+- `POST /playground/datasets` – upload sample datasets for experiments.
+
+### 2.11 Capsules (“Time Machine”)
+- `POST /capsules` – snapshot schema, data, blobs, models, code refs into an immutable capsule ID.
+- `GET /capsules/{capsuleId}` – inspect manifest.
+- `POST /capsules/{capsuleId}/restore` – rebuild the environment (tables, BlobGrid references, metadata). Capsules are content-addressed and treated as high-IRX objects for eons-grade preservation.
+
+- `POST /internal/rpc` – reserved for mesh-to-mesh calls (currently returns 501 until bespoke RPC handlers are registered).
+
+### 2.12 Mesh Diagnostics
+- `GET /mesh/self` – identify the current node (`nodeId`, roles, addresses, status).
+- `GET /mesh/nodes` (admin) – list every known node from the mesh heartbeat table.
+- `GET /genesis` (admin) – inspect the Genesis book the node booted with.
+- `POST /internal/rpc` – reserved for mesh RPC (currently returns 501 until handlers are registered).
+
+### 2.13 Ops & SLOs
+- `GET /ops/slos` – fetch the current project SLO definition.
+- `PUT /ops/slos` – update SLO targets (latency, availability, durability, blob repair window, notes).
+- `GET /ops/advisories` – list open advisories generated by the Ops Autopilot.
+
+### 2.14 VVM (Voike Virtual Machine)
+- `POST /vvm` – register a VVM descriptor by sending `{ "descriptor": "<yaml string>" }`.
+- `GET /vvm` – list descriptors for the current project.
+- `POST /vvm/{vvmId}/build` – trigger a VVM build (grid job `vvm.build`), returning `{ artifactId, jobId }`.
+
+### 2.15 APIX Sessions & Flows
+- `GET /apix/schema` – discover the APIX schema (ops + intents + types) for code generation.
+- `POST /apix/connect` – create a project-scoped APIX session; returns `{ sessionId, token }`.
+- `POST /apix/flows` – open a flow within a session (`{ sessionToken, kind, params }`).
+- `GET /apix/flows?sessionToken=<uuid>` – list flows tied to a session token.
+- `POST /apix/exec` – execute an APIX op inside a session (`flow.execQuery`, `flow.ingestBatch`, `flow.execVvm` in v1). Body: `{ sessionToken, op, payload }`.
+
+### 2.16 Infinity Fabric
+- `GET /infinity/nodes` (builder JWT) – inspect mesh nodes annotated with provider/region/cost/carbon metadata.
+- `GET /infinity/pools` (project API key) – list pools available to the current project (global + project-scoped).
+- `POST /infinity/pools` (project API key) – create/update pools with selectors/policies:
+  ```json
+  {
+    "name": "latency-apac",
+    "selector": { "region": "ap-southeast-1" },
+    "policies": { "optimize_for": "latency", "max_cost_per_hour": 2.5 }
+  }
+  ```
+
+### 2.17 AI Fabric
+- `GET /ai/status` – recent AI jobs (ingest analysis, atlas updates) for this project.
+- `GET /ai/atlas` – list of discovered entities/topics for the project’s Knowledge Atlas (tables, blobs, semantic groupings). Returns empty array if AI Fabric isn’t enabled yet.
+- `GET /ai/atlas/table/:table` – summary for a specific table/entity captured by the atlas.
+- `GET /ai/policy` / `POST /ai/policy` – fetch or update the Knowledge Fabric data policy (`none`, `metadata`, `summaries`, `full`). Default is `summaries` so builders get helpful output without exposing raw payloads.
+- `POST /ai/ask` – project-scoped Q&A endpoint that pulls from the Knowledge Fabric (ingests, queries, blobs, jobs, ledger events) obeying the current policy.
+- `POST /ai/query/explain` – returns a human-readable explanation for an incoming query (`{ sql, semanticText?, filters? }`).
+- `POST /ai/query/summarize-result` – send sampled rows to receive high-level stats (row count, numeric ranges, categorical leaders).
+- `GET /ai/ops/triage` – AI-backed triage of the project’s SLO + advisory state.
+- `GET /ai/suggestions` – curated list of AI suggestions (schema/index/HyperFlow ideas) awaiting approval.
+- `POST /ai/suggestions/{id}/approve` / `POST /ai/suggestions/{id}/reject` – change the status of a suggestion (still logged in the Truth Ledger).
+- `POST /ai/irx/learn` – recalc project-specific IRX weights from recent `irx_objects` observations (read-only; IRX stays deterministic).
+- `GET /ai/irx/weights` – inspect the current learned weights (utility/locality/resilience/cost/energy distribution per project).
+- `GET /ai/irx/heatmap` – shows the hottest objects (blobs/datasets/jobs) with tiers (`hot/warm/cold`) plus weighted scores using the learned weights.
+- `POST /ai/pipelines/analyze` – scans recent `grid_jobs` for repeated patterns and returns pipeline proposals (VVM descriptors + HyperFlow DAG suggestions). Automatically emits `pipeline` suggestions that the user can approve via `/ai/suggestions`.
+- `POST /ai/capsule/summary` – compare two capsules (or the latest pair) and narrate what changed: tables, blobs, models, code references.
+- `GET /ai/capsule/timeline` – story view of capsule history (first snapshot → latest) with counts per snapshot so builders can see how the project evolved.
+
+### 2.18 Chat Sessions
+- `POST /chat` – send a chat message (optionally referencing `sessionId`); VOIKE records the conversation, calls the Knowledge Fabric, and returns `{ sessionId, reply, policy, answers }`.
+- `GET /chat/sessions` – list the most recent chat sessions for the API key’s project.
+- `GET /chat/sessions/{sessionId}/messages` – fetch the transcript/history for a given session (roles, content, actions).
+
+### 2.19 FLOW Plans
+- `POST /flow/parse` – validate FLOW text and return AST + warnings.
+- `POST /flow/plan` – compile FLOW into an execution plan graph (stored per project).
+- `POST /flow/execute` – run a stored plan (sync for tiny flows, async via Grid for larger ones).
+- `GET /flow/plans`, `GET /flow/plans/{planId}`, `DELETE /flow/plans/{planId}` – manage stored plans.
+- `GET /flow/ops` – list supported FLOW op contracts (`LOAD_CSV@1.0`, `INFER@1.0`, etc.).
+
+## 3. Health & Reference Endpoints
+- `GET /health`
+- `GET /info`
+- `GET /` (HTML)
+
+Use them for uptime checks or to populate your frontend quickstart tiles.
+
+## 4. Common Workflows (curl)
 ```bash
 # Waitlist signup
 curl -X POST https://voike.supremeuf.com/waitlist \
   -H 'content-type: application/json' \
-  -d '{ "email": "founder@example.com" }'
+  -d '{ "email": "founder@example.com", "name": "Ada" }'
 
-# Approve and mint project/key
+# Approve waitlist + mint API key
 curl -X POST https://voike.supremeuf.com/admin/waitlist/<WAITLIST_ID>/approve \
-  -H 'x-voike-admin-token: voike-admin-5bb6c26f3a89441f8fbf95c7088795e4' \
+  -H 'x-voike-admin-token: <ADMIN_TOKEN>' \
   -H 'content-type: application/json' \
-  -d '{ "organizationName":"Ada Labs", "projectName":"vector-api", "keyLabel":"primary" }'
+  -d '{ "organizationName": "Ada Labs", "projectName": "vector-api", "keyLabel": "primary" }'
 
 # Hybrid query
 curl -X POST https://voike.supremeuf.com/query \
   -H 'x-voike-api-key: <PROJECT_KEY>' \
   -H 'content-type: application/json' \
-  -d '{ "kind":"hybrid","sql":"SELECT * FROM scientists WHERE score > 95","semanticText":"legendary scientist" }'
+  -d '{ "kind": "hybrid", "sql": "SELECT * FROM scientists WHERE score > 95", "semanticText": "legendary scientist" }'
+
+# Blob manifest
+curl -X GET https://voike.supremeuf.com/blobs/<BLOB_ID>/manifest \
+  -H 'x-voike-api-key: <PROJECT_KEY>'
+
+# WebSocket events (example with wscat)
+VOIKE_API_KEY=<PROJECT_KEY> wscat -c wss://voike.supremeuf.com/events -H "x-voike-api-key: $VOIKE_API_KEY"
+
+# Update SLO
+curl -X PUT https://voike.supremeuf.com/ops/slos \
+  -H 'x-voike-api-key: <PROJECT_KEY>' \
+  -H 'content-type: application/json' \
+  -d '{ "p95QueryLatencyMs": 120, "availabilityTarget": 0.999 }'
 ```
 
 ## 5. Integration Notes
-- Control tables (`organizations`, `projects`, `api_keys`, `waitlist`) sit beside VDB tables inside Postgres; everything is transactional.
-- Ingestion jobs, Truth Ledger entries, VAR energy, DAI states, telemetry events, and MCP traces are **all tagged with `project_id`**.
-- Scripts & SDKs should read `VOIKE_API_KEY` (and optionally `VOIKE_BASE_URL`) from env. The included `npm run regression` script already expects this.
-- `/` can be embedded in your marketing site or mirrored inside a dashboard; `/info` provides the same details for any CLI/SDK usage.
+- Control-plane tables (`organizations`, `projects`, `api_keys`, `waitlist`) live beside VDB data inside Postgres; everything is transactional.
+- Ingestion jobs, ledger entries, kernels, DAI states, telemetry, BlobGrid manifests, IRX metrics, capsules, and MCP traces are tagged with `project_id` for multi-tenant isolation.
+- Edge nodes serve cached/offline data instantly and reconcile to online state as soon as WAN returns—no stale UI states.
+- Ops Autopilot surfaces advisories whenever SLOs are breached; enable chaos mode via env vars (`CHAOS_ENABLED`, `CHAOS_FAULT_PROBABILITY`, `CHAOS_MAX_DELAY_MS`) in staging to test resilience paths.
+- Scripts + SDKs read `VOIKE_API_KEY`, `VOIKE_BASE_URL`, and (optionally) `VOIKE_ADMIN_TOKEN` from env.
+- `/` can be embedded directly in your frontend; `/info` powers CLI/SDK onboarding flows.
 
-## 6. References
-- `README.md` – deployment + Quickstart handbook.
-- `docs/kernels.md` – kernel math notes.
-- `docs/openapi.yaml` – structured schema for codegen.
+## 6. Regression Coverage
+- `npm run regression` (TypeScript) – CSV ingest → `/ingest/{jobId}` polling → `/query` → `/kernel/state` → `/ledger/recent`.
+- `python scripts/voike_regression.py` – All of the above **plus** waitlist signup, optional admin approval (if `VOIKE_ADMIN_TOKEN` is set), builder password setup + login, `/user/profile`, `/user/projects`, secondary ingestion/query using the newly minted API key, `/metrics`, `/mcp/*`, and Fibonacci SQL benchmarking.
+- Future additions (documented already) will extend the suites to hit BlobGrid, Grid jobs, capsules, and edge sync once modules land.
+
+## 7. References
+- `README.md` – deployment & operational guide (Docker-only bootstrap on any machine).
+- `docs/openapi.yaml` – machine-readable schemas (perfect for SDK or typed clients).
+- `docs/kernels/Kernel8/*`, `docs/kernels/Kernel9/*` – kernel math, APIs, and benchmarking.
+- `docs/developer/*.md` – BlobGrid, Edge, IRX, Grid, Playground, Capsules deep dives.
+- `docs/infinity_fabric.md` – provider/pool architecture, sustainability considerations, CLI roadmap.

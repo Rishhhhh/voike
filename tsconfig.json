@@ -25,8 +25,24 @@
       "@ledger/*": ["src/ledger/*"],
       "@runtime/*": ["src/runtime/*"],
       "@telemetry/*": ["src/telemetry/*"],
-      "@auth/*": ["src/auth/*"]
+      "@auth/*": ["src/auth/*"],
+      "@blobgrid/*": ["src/blobgrid/*"],
+      "@edge/*": ["src/edge/*"],
+      "@irx/*": ["src/irx/*"],
+      "@grid/*": ["src/grid/*"],
+      "@playground/*": ["src/playground/*"],
+      "@capsules/*": ["src/capsules/*"],
+      "@genesis/*": ["src/genesis/*"],
+      "@mesh/*": ["src/mesh/*"],
+      "@ops/*": ["src/ops/*"],
+      "@vvm/*": ["src/vvm/*"],
+      "@apix/*": ["src/apix/*"],
+      "@infinity/*": ["src/infinity/*"],
+      "@federation/*": ["src/federation/*"],
+      "@ai/*": ["src/ai/*"],
+      "@chat/*": ["src/chat/*"],
+      "@flow/*": ["flow/src/*"]
     }
   },
-  "include": ["src", "tests"]
+  "include": ["src", "flow/src", "tests"]
 }
