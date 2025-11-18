@@ -515,16 +515,24 @@ def run_ai_workflow(
     )
     if pipelines:
         report("AI pipeline proposals", detail=str(len(pipelines.get("proposals", []))))
-    capsule_summary = safe_request(
-        "AI capsule summary",
-        lambda: request("POST", "/ai/capsule/summary", json={}),
-    )
+    capsule_summary = None
+    try:
+        capsule_summary = request("POST", "/ai/capsule/summary", json={})
+    except RuntimeError as exc:
+        if "Need at least two capsules" in str(exc):
+            report("AI capsule summary", status="SKIP", detail="Less than two capsules available")
+        else:
+            raise
     if capsule_summary:
         report("AI capsule summary", detail=capsule_summary.get("summary"))
-    capsule_timeline = safe_request(
-        "AI capsule timeline",
-        lambda: request("GET", "/ai/capsule/timeline"),
-    )
+    try:
+        capsule_timeline = request("GET", "/ai/capsule/timeline")
+    except RuntimeError as exc:
+        if "Need at least two capsules" in str(exc):
+            report("AI capsule timeline", status="SKIP", detail="Less than two capsules available")
+            capsule_timeline = None
+        else:
+            raise
     if capsule_timeline:
         report("AI capsule timeline events", detail=str(len(capsule_timeline.get("events", []))))
     flow_source = (

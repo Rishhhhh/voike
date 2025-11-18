@@ -1,0 +1,36 @@
+FLOW "VOIKE Grid Fibonacci"
+
+INPUTS
+  text projectId
+  number fibIndex
+END INPUTS
+
+STEP submit =
+  APX_EXEC "grid.submitJob"
+    WITH {
+      projectId = projectId,
+      jobType = jobType,
+      payload = {
+        "task": "fib",
+        "n": fibIndex
+      }
+    }
+
+STEP await =
+  APX_EXEC "grid.awaitJob"
+    WITH {
+      projectId = projectId,
+      jobId = submit.jobId
+    }
+
+STEP output =
+  OUTPUT_TEXT {
+    jobId = submit.jobId,
+    fibIndex = fibIndex,
+    result = await.value,
+    status = await.status
+  }
+
+END FLOW
+  text jobType optional
+  text gridEndpoint optional
