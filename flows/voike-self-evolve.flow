@@ -1,0 +1,35 @@
+FLOW "VOIKE SELF EVOLVE"
+
+INPUTS
+  text projectId
+  text featureSpecPath
+END INPUTS
+
+STEP read_spec =
+  APX_EXEC "source.readFile"
+    WITH { "projectId": projectId, "path": featureSpecPath }
+
+STEP plan =
+  RUN AGENT "planner" WITH projectId = projectId, spec = read_spec.content
+
+STEP codegen =
+  RUN AGENT "codegen" WITH projectId = projectId, plan = plan.steps
+
+STEP tests =
+  RUN AGENT "tester" WITH projectId = projectId, changes = codegen.changes
+
+STEP infra =
+  RUN AGENT "infra" WITH projectId = projectId, changes = codegen.changes
+
+STEP summary =
+  RUN AGENT "product"
+    WITH projectId = projectId,
+         spec = read_spec.content,
+         plan = plan.steps,
+         tests = tests.report,
+         deploy = infra.result
+
+STEP output =
+  OUTPUT summary AS "evolution summary"
+
+END FLOW

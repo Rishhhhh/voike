@@ -1,0 +1,80 @@
+FLOW "VOIKE Full Regression"
+
+INPUTS
+  text projectId
+  text datasetPath
+  text regressionQuery
+  text regressionQuestion
+  text vpkgManifestPath optional
+  text serviceName optional
+END INPUTS
+
+STEP ingest_plan =
+  APX_EXEC "ingest.prepare"
+    WITH {
+      projectId = projectId,
+      filePath = datasetPath,
+      logicalName = "regression_dataset"
+    }
+
+STEP ingest_run =
+  APX_EXEC "ingest.execute"
+    WITH {
+      projectId = projectId,
+      planId = ingest_plan.planId
+    }
+
+STEP query =
+  APX_EXEC "query.runHybrid"
+    WITH {
+      projectId = projectId,
+      sql = regressionQuery,
+      semanticText = regressionQuestion
+    }
+
+STEP ai_answer =
+  APX_EXEC "agents.fastAnswer"
+    WITH {
+      projectId = projectId,
+      question = regressionQuestion
+    }
+
+STEP capsule =
+  APX_EXEC "capsules.snapshot"
+    WITH {
+      projectId = projectId,
+      note = "Regression snapshot",
+      includeBlobs = true
+    }
+
+STEP vpkg_manifest =
+  APX_EXEC "vpkgs.ensureManifest"
+    WITH {
+      projectId = projectId,
+      manifestPath = vpkgManifestPath
+    }
+
+STEP build =
+  BUILD VPKG vpkg_manifest.manifestPath
+
+STEP deploy =
+  DEPLOY SERVICE build.vpkgId serviceName
+
+STEP health =
+  APX_EXEC "gateway.checkHealth"
+    WITH {
+      projectId = projectId,
+      endpoint = deploy.endpoint
+    }
+
+STEP log =
+  OUTPUT_TEXT {
+    ingestJob = ingest_run.jobId,
+    queryLatencyMs = query.meta.latencyMs,
+    aiAnswer = ai_answer.answer,
+    capsuleId = capsule.capsuleId,
+    serviceEndpoint = deploy.endpoint,
+    health = health.status
+  }
+
+END FLOW

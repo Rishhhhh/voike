@@ -55,4 +55,47 @@ C4,55,paid
     expect(topCustomers[1].customer_id).toBe('C4');
     expect(result.metrics.nodesExecuted).toBeGreaterThanOrEqual(5);
   });
+
+  it('supports APX_EXEC + BUILD_VPKG + DEPLOY_SERVICE with nested references', async () => {
+    const source = `FLOW "Meta Flow"
+
+INPUTS
+  text manifest_input
+END INPUTS
+
+STEP autoplan =
+  APX_EXEC "demo.plan"
+    WITH request = { projectId: "proj", seed: manifest_input }
+
+STEP build =
+  BUILD VPKG manifest_input
+
+STEP deploy =
+  DEPLOY SERVICE build.vpkgId "web"
+
+STEP blurb =
+  OUTPUT_TEXT autoplan.response.summary
+
+END FLOW`;
+
+    const parsed = parseFlowSource(source, { strict: true });
+    if (!parsed.ast) throw new Error('AST missing');
+    const plan = buildFlowPlan(parsed.ast);
+    const context = {
+      apxExecutor: (_target: string, payload: any) => ({
+        response: { summary: `planned:${payload.request.seed}` },
+      }),
+      vpkgBuilder: (manifest: unknown) => ({
+        vpkgId: `vpkg-${manifest}`,
+      }),
+      serviceDeployer: (params: { vpkgId: string; serviceName: string }) => ({
+        serviceName: params.serviceName,
+        endpoint: `/s/${params.serviceName}-${params.vpkgId}`,
+      }),
+      textCollector: jest.fn(),
+    };
+    const result = await executeFlowPlan(plan, { manifest_input: 'manifests/core.vpkg.json' }, 'sync', context);
+    expect(result.outputs.blurb).toBe('planned:manifests/core.vpkg.json');
+    expect(context.textCollector).toHaveBeenCalledWith('planned:manifests/core.vpkg.json', expect.any(Object));
+  });
 });

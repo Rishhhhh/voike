@@ -70,7 +70,7 @@ export function FlowPage() {
 ## 3. Lovable / GPT Master Prompt
 
 ```
-You are VOIKE FLOW copilot. Use flow/README.md, flow/api.md, flow/docs/*.md as specs.
+You are VOIKE FLOW copilot. Use README.md (Flow section), docs/api.md, and flow/docs/*.md as specs.
 When asked for features:
 1. Generate FLOW script.
 2. Validate via /flow/parse.

@@ -157,13 +157,33 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 
 - FLOW turns long-form code (Python/C++/SQL/TF) into compact, step-based plans.
 - REST/APIX endpoints:
-  - `POST /flow/parse` → validate FLOW source.
-  - `POST /flow/plan` → compile into plan graph (stored per project).
-  - `POST /flow/execute` → run plans sync or async (Grid jobs).
+  - `POST /flow/parse` → validate FLOW source (returns AST + warnings).
+  - `POST /flow/plan` → compile FLOW source into a plan graph (stored per project, returns `planId` + nodes/edges).
+  - `POST /flow/execute` → run plans sync or async (Grid jobs; returns outputs/metrics or async `jobId`).
   - `GET /flow/plans`, `GET /flow/plans/{id}`, `DELETE /flow/plans/{id}` – manage plans.
-  - `GET /flow/ops` – discover available FLOW op contracts.
+  - `GET /flow/ops` → discover available FLOW op contracts; `GET /flow/ops/{name}` → inspect a specific op.
 - Open `/playground/flow-ui` in your VOIKE deployment to get a Tailwind FLOW playground (paste API key, hit Parse/Plan/Execute, see AST/plan/outputs). Works great with `VOIKE_PLAYGROUND_API_KEY` for demos.
 - LLM agents use the FLOW spec + APIX ops to generate plans automatically.
+
+### Stack overview
+1. **Adapters / Sources** – Python, C/C++, Rust, SQL, TypeScript, TF graphs, ONNX, notebooks, natural-language specs. Adapters parse these and emit FLOW.
+2. **FLOW** – declarative, step-based plans (`*.flow`). Minimal syntax, easy for humans/LLMs.
+3. **Execution Plan Graph** – FLOW compiles into graph nodes (FLOW_OP, VASM blocks, VVM jobs) with IRX/scheduling metadata.
+4. **VASM** – tiny, architecture-independent VM instructions (arithmetic, control flow, VOIKE syscalls).
+5. **Hardware / Grid** – CPU/GPU/edge nodes orchestrated by VOIKE (Infinity Fabric, IRX telemetry).
+
+### Key concepts
+- **FLOW opcodes** cover semantic actions (`LOAD CSV`, `FILTER`, `GROUP`, `RUN_JOB`, `RUN_AGENT`). Ops are versioned (`OP@MAJOR.MINOR`) so plans stay stable.
+- **Meta orchestration ops** (`APX_EXEC`, `BUILD_VPKG`, `DEPLOY_SERVICE`, `OUTPUT_TEXT`) are available inside FLOW so the same plan can describe repo bootstrap, packaging, and deployment directly through VOIKE.
+- **VVM descriptors** wrap external runtimes (Python, C++, TF Serving, etc.) with env requirements and IO schemas.
+- **Agents** contribute FLOW by calling APIX (`flow.parse/plan/execute`, `agent.*` ops) and logging to `/orchestrator/tasks`.
+- **Capsules** snapshot FLOW + plans + artifacts for reproducibility.
+
+### Goals
+- **Universal**: any language/framework becomes a FLOW plan + VPKG deployment.
+- **Compact**: large imperative code compresses into ~10–20 FLOW steps.
+- **Safe & stable**: ops are versioned; plans only change when you opt in.
+- **Optimizable**: plan graph metadata allows IRX/DAI/AI Fabric to schedule and improve workflows.
 
 ## 7. CLI, Scripts & VPKG
 
@@ -238,6 +258,7 @@ VOIKE is starting to run itself. The orchestrator now persists a full project gr
 - `flow/docs/ORCH-FLOW.md` documents the FLOW profile agents follow (`RUN AGENT`, `RUN JOB`, `ASK_AI`, etc.) so Planner/Codegen/Tester/Infra steps stay consistent.
 - `flows/fast-agentic-answer.flow` pairs with `/agents/fast-answer` / `voike agent answer` to demonstrate the multi-agent planner → reasoning → facts → code → critique → stitch loop (all steps logged in `/orchestrator/tasks`).
 - `flows/onboard-foreign-app.flow` encodes the Lovable/Replit/Supabase import pipeline; run it via `voike app onboard` (which uses `/flow/plan` + `/flow/execute`) and watch `/orchestrator/tasks` capture each migration step.
+- `flows/voike-meta.flow` describes bootstrapping VOIKE itself (DB/kernels/VASM/envs/VVMs/peacock/etc.), while `flows/voike-self-evolve.flow` captures how Planner/Codegen/Tester/Infra/Product agents evolve VOIKE end-to-end.
 
 Upcoming phases will attach Capsules to each task, wire CLI helpers (`voike task`, `voike evolve`), and let FLOW drive the entire evolution loop.
 

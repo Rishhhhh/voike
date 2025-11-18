@@ -182,12 +182,62 @@ The backend injects `projectId` automatically so logging/ledger entries remain s
 
 ### 2.19 FLOW Plans
 - `POST /flow/parse` – validate FLOW text and return AST + warnings.
+- Request:
+  ```json
+  {
+    "source": "FLOW \"Name\" ... END FLOW",
+    "options": { "strict": true }
+  }
+  ```
+- Response:
+  ```json
+  {
+    "ok": true,
+    "warnings": [],
+    "ast": { "...": "..." }
+  }
+  ```
 - `POST /flow/plan` – compile FLOW into an execution plan graph (stored per project).
+- Request:
+  ```json
+  { "source": "FLOW ... END FLOW", "projectId": "uuid-of-project" }
+  ```
+- Response:
+  ```json
+  {
+    "planId": "plan-uuid",
+    "graph": {
+      "nodes": [{ "id": "step:load", "kind": "FLOW_OP", "op": "LOAD_CSV@1.0", "inputs": [], "outputs": ["load"] }],
+      "edges": [{ "from": "step:load", "to": "step:filtered", "via": "load" }]
+    }
+  }
+  ```
 - `POST /flow/execute` – run a stored plan (sync for tiny flows, async via Grid for larger ones).
+- Request:
+  ```json
+  {
+    "planId": "plan-uuid",
+    "inputs": { "sales_csv": "blob://..." },
+    "mode": "auto"
+  }
+  ```
+- Response (sync):
+  ```json
+  {
+    "mode": "sync",
+    "outputs": { "TopCustomers": [ { "customer": "C1", "total": 123 } ] },
+    "metrics": { "elapsedMs": 132, "nodesExecuted": 5 }
+  }
+  ```
 - `GET /flow/plans`, `GET /flow/plans/{planId}`, `DELETE /flow/plans/{planId}` – manage stored plans.
 - `GET /flow/ops` – list supported FLOW op contracts (`LOAD_CSV@1.0`, `INFER@1.0`, etc.).
 - `GET /flow/ops/{name}` – inspect an individual op (category, description, version) to teach agents or UIs.
 - `GET /playground/flow-ui` – Tailwind playground UI that calls the above endpoints via fetch; use it with `VOIKE_PLAYGROUND_API_KEY` or your project key.
+
+Runtime highlights:
+- `APX_EXEC` now invokes APIX contracts (or stubs) from within a FLOW plan, so meta flows can bootstrap kernels/envs without custom glue.
+- `BUILD_VPKG` and `DEPLOY_SERVICE` convert plan outputs into running services by talking to the VPKG registry + gateway hooks.
+- `OUTPUT_TEXT` lets agents emit human-readable briefings even when no table result exists.
 
 ### 2.20 Packages & Apps
 - `POST /vpkgs` – publish a `.vpkg` bundle (manifest + base64 payload) into the current project registry.
@@ -223,7 +273,11 @@ These endpoints back the forthcoming `voike task` / `voike evolve` CLI experienc
   - `agent.taskSplit`, `agent.reasoning`, `agent.facts`, `agent.code`, `agent.critique`, `agent.stitcher`, `agent.fastAnswer`.
   - `source.fetchProject`, `db.introspect`, `db.migrationPlanner`, `db.migrateToVoike`, `vvm.autogenFromProject`, `vpkgs.createFromProject`, `apps.launch`, `agent.onboardExplainer` – used by `flows/onboard-foreign-app.flow` to clone/import apps.
   - `project.build` – runs the repo build pipeline (currently supports Node/JS installs + builds) and logs outputs under `/orchestrator/tasks`.
-- These are currently stubs that record orchestrator steps and return synthetic answers so FLOWs (e.g., `flows/fast-agentic-answer.flow`, `flows/onboard-foreign-app.flow`) can run end-to-end; they’ll be replaced with real GPT/grid-backed agents in later phases.
+- Higher-level FLOWs:
+  - `flows/fast-agentic-answer.flow` + `/agents/fast-answer` route demonstrate the planner → reasoning → facts → code → critique → stitch loop (backed by GPT when `OPENAI_*` env vars are set).
+  - `flows/onboard-foreign-app.flow` drives `voike app onboard` to clone/import apps from Lovable/Replit/git + Supabase/Postgres.
+  - `flows/voike-meta.flow` boots VOIKE itself (DB/kernels/VASM/envs/VVM/VPKG launch, regression/perf, capsule snapshots), and `flows/voike-self-evolve.flow` runs the planner/codegen/tester/infra/product agents to evolve VOIKE.
+- These agents are GPT-backed when `OPENAI_API_KEY` is provided; otherwise they fall back to synthetic responses so FLOW plans can still execute end-to-end.
 
 ## 3. Health & Reference Endpoints
 - `GET /health`

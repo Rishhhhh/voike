@@ -1,4 +1,5 @@
 import type { FlowStep } from './ast';
+import { parseFlowPayload, type FlowLiteral } from './parser/payload';
 
 export type ComparisonOperator = '>' | '>=' | '<' | '<=' | '==' | '!=';
 export type AggregationFn = 'sum' | 'count';
@@ -11,7 +12,11 @@ export type FlowNodeConfig =
   | { kind: 'SORT'; source: string; field: string; direction: 'ASC' | 'DESC'; limit?: number }
   | { kind: 'TAKE'; source: string; count: number }
   | { kind: 'RUN_AGENT'; agent: string; payload?: Record<string, unknown> }
-  | { kind: 'OUTPUT'; source: string; label: string };
+  | { kind: 'APX_EXEC'; target: string; payload?: FlowLiteral }
+  | { kind: 'BUILD_VPKG'; manifestRef: string }
+  | { kind: 'DEPLOY_SERVICE'; vpkgRef: string; serviceName: string }
+  | { kind: 'OUTPUT'; source: string; label: string }
+  | { kind: 'OUTPUT_TEXT'; value: FlowLiteral };
 
 export type Condition = {
   field: string;
@@ -48,8 +53,16 @@ export function buildNodeConfig(step: FlowStep, previousStep?: string): NodeConf
       return parseTake(step, previousStep);
     case 'RUN_AGENT':
       return parseRunAgent(step);
+    case 'APX_EXEC':
+      return parseApxExec(step);
+    case 'BUILD_VPKG':
+      return parseBuildVpkg(step);
+    case 'DEPLOY_SERVICE':
+      return parseDeployService(step);
     case 'OUTPUT':
       return parseOutput(step);
+    case 'OUTPUT_TEXT':
+      return parseOutputText(step);
     default: {
       // allow mixed operations like SORT + TAKE on subsequent lines
       if (upperLine.startsWith('SORT ')) {
@@ -60,6 +73,9 @@ export function buildNodeConfig(step: FlowStep, previousStep?: string): NodeConf
       }
       if (upperLine.startsWith('RUN AGENT')) {
         return parseRunAgent(step);
+      }
+      if (upperLine.startsWith('OUTPUT TEXT') || upperLine.startsWith('OUTPUT_TEXT')) {
+        return parseOutputText(step);
       }
       throw new Error(`Unsupported FLOW op in STEP ${step.name}`);
     }
@@ -189,14 +205,71 @@ function parseTake(step: FlowStep, previousStep?: string): NodeConfigResult {
 }
 
 function parseRunAgent(step: FlowStep): NodeConfigResult {
-  const line = step.lines[0] || '';
-  const match = line.match(/RUN\s+AGENT\s+"([^"]+)"(?:\s+WITH\s+(.+))?/i);
+  let line = step.lines[0] || '';
+  const inlineWithIdx = line.toUpperCase().indexOf('WITH ');
+  if (inlineWithIdx >= 0) {
+    line = line.slice(0, inlineWithIdx).trim();
+  }
+  const match = line.match(/RUN\s+AGENT\s+"([^"]+)"/i);
   if (!match) {
     throw new Error(`Invalid RUN AGENT syntax in step ${step.name}`);
   }
-  const [, agentName, payloadRaw] = match;
-  const payload = payloadRaw ? parseKeyValuePayload(payloadRaw) : undefined;
+  const [, agentName] = match;
+  const payloadBlock = extractWithBlock(step);
+  const payload = payloadBlock ? ensureRecord(parseFlowPayload(payloadBlock)) : undefined;
   return { config: { kind: 'RUN_AGENT', agent: agentName, payload }, dependencies: [] };
+}
+
+function parseApxExec(step: FlowStep): NodeConfigResult {
+  let line = step.lines[0] || '';
+  const inlineWithIdx = line.toUpperCase().indexOf('WITH ');
+  if (inlineWithIdx >= 0) {
+    line = line.slice(0, inlineWithIdx).trim();
+  }
+  const match = line.match(/APX_EXEC\s+"([^"]+)"/i);
+  if (!match) {
+    throw new Error(`Invalid APX_EXEC syntax in step ${step.name}`);
+  }
+  const [, target] = match;
+  const payloadBlock = extractWithBlock(step);
+  const payload = payloadBlock ? parseFlowPayload(payloadBlock) : undefined;
+  return { config: { kind: 'APX_EXEC', target, payload }, dependencies: [] };
+}
+
+function parseBuildVpkg(step: FlowStep): NodeConfigResult {
+  const line = step.lines[0] || '';
+  const match = line.match(/BUILD[_\s]+VPKG\s+([A-Za-z0-9_\.\[\]]+)/i);
+  if (!match) {
+    throw new Error(`Invalid BUILD VPKG syntax in step ${step.name}`);
+  }
+  const [, manifestRef] = match;
+  return { config: { kind: 'BUILD_VPKG', manifestRef }, dependencies: [manifestRef.split('.')[0]] };
+}
+
+function parseDeployService(step: FlowStep): NodeConfigResult {
+  const line = step.lines[0] || '';
+  const match = line.match(/DEPLOY[_\s]+SERVICE\s+([A-Za-z0-9_\.\[\]]+)\s+"([^"]+)"/i);
+  if (!match) {
+    throw new Error(`Invalid DEPLOY SERVICE syntax in step ${step.name}`);
+  }
+  const [, vpkgRef, serviceName] = match;
+  return { config: { kind: 'DEPLOY_SERVICE', vpkgRef, serviceName }, dependencies: [vpkgRef.split('.')[0]] };
+}
+
+function parseOutputText(step: FlowStep): NodeConfigResult {
+  const payloadBlock = extractWithBlock(step);
+  if (payloadBlock) {
+    return { config: { kind: 'OUTPUT_TEXT', value: parseFlowPayload(payloadBlock) }, dependencies: [] };
+  }
+  const line = step.lines[0] || '';
+  const cleaned = line.replace(/^OUTPUT[_\s]+TEXT\s+/i, '').trim();
+  if (!cleaned) {
+    throw new Error(`Invalid OUTPUT TEXT syntax in step ${step.name}`);
+  }
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    return { config: { kind: 'OUTPUT_TEXT', value: cleaned.slice(1, -1) }, dependencies: [] };
+  }
+  return { config: { kind: 'OUTPUT_TEXT', value: cleaned }, dependencies: [] };
 }
 
 function parseKeyValuePayload(payload: string) {
@@ -220,4 +293,30 @@ function parseOutput(step: FlowStep): NodeConfigResult {
   const [, source, labelRaw] = match;
   const label = labelRaw || step.name;
   return { config: { kind: 'OUTPUT', source, label }, dependencies: [source] };
+}
+
+function extractWithBlock(step: FlowStep): string | undefined {
+  for (let idx = 0; idx < step.lines.length; idx += 1) {
+    const raw = step.lines[idx];
+    const inlineIdx = raw.toUpperCase().indexOf('WITH ');
+    if (idx === 0 && inlineIdx >= 0) {
+      const after = raw.slice(inlineIdx + 4);
+      const trailing = step.lines.slice(idx + 1);
+      return [after, ...trailing].join('\n').trim();
+    }
+    if (idx > 0 && raw.trim().toUpperCase().startsWith('WITH')) {
+      const replaced = raw.replace(/^\s*WITH\s*/i, '');
+      const trailing = step.lines.slice(idx + 1);
+      return [replaced, ...trailing].join('\n').trim();
+    }
+  }
+  return undefined;
+}
+
+function ensureRecord(value: FlowLiteral | undefined): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value) || value === null || typeof value !== 'object') {
+    throw new Error('Agent payload must be an object literal');
+  }
+  return value;
 }

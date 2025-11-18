@@ -14,6 +14,13 @@ export interface FlowRuntimeContext {
   projectId?: string;
   runId?: string;
   agentRunner?: (agent: string, payload: Record<string, unknown>, ctx: { projectId?: string; runId?: string }) => Promise<any> | any;
+  apxExecutor?: (target: string, payload: any, ctx: { projectId?: string; runId?: string; step: string }) => Promise<any> | any;
+  vpkgBuilder?: (manifestInput: unknown, ctx: { projectId?: string; runId?: string; step: string }) => Promise<any> | any;
+  serviceDeployer?: (
+    params: { vpkgId: string; serviceName: string; payload?: Record<string, unknown> },
+    ctx: { projectId?: string; runId?: string; step: string },
+  ) => Promise<any> | any;
+  textCollector?: (text: string, ctx: { projectId?: string; runId?: string; step: string }) => Promise<void> | void;
 }
 
 type TableRow = Record<string, unknown>;
@@ -47,7 +54,7 @@ export async function executeFlowPlan(
       continue;
     }
     const stepName = node.outputs[0] ?? node.meta?.stepName ?? node.id;
-    const result = await executeNode(config, state, inputs, runtimeContext);
+    const result = await executeNode(config, state, inputs, runtimeContext, stepName);
     state[stepName] = result;
     lastResultKey = stepName;
     executedNodes += 1;
@@ -79,7 +86,8 @@ async function executeNode(
   config: FlowNodeConfig,
   state: Record<string, unknown>,
   inputs: Record<string, unknown>,
-  context?: FlowRuntimeContext,
+  context: FlowRuntimeContext | undefined,
+  stepName: string,
 ) {
   switch (config.kind) {
     case 'LOAD_CSV':
@@ -95,14 +103,50 @@ async function executeNode(
     case 'TAKE':
       return resolveDataset(config.source, state, inputs).slice(0, config.count);
     case 'RUN_AGENT': {
-      const resolved = resolvePayload(config.payload || {}, state, inputs);
+      const resolved = resolveLiteral(config.payload || {}, state, inputs);
       if (context?.agentRunner) {
         return context.agentRunner(config.agent, resolved, { projectId: context.projectId, runId: context.runId });
       }
       return runAgentStub(config.agent, resolved);
     }
+    case 'APX_EXEC': {
+      const payload = resolveLiteral(config.payload || {}, state, inputs);
+      if (context?.apxExecutor) {
+        return context.apxExecutor(config.target, payload, { projectId: context.projectId, runId: context.runId, step: stepName });
+      }
+      return { target: config.target, payload, status: 'queued' };
+    }
+    case 'BUILD_VPKG': {
+      const manifestValue = resolveReferenceValue(config.manifestRef, state, inputs);
+      if (context?.vpkgBuilder) {
+        return context.vpkgBuilder(manifestValue, { projectId: context.projectId, runId: context.runId, step: stepName });
+      }
+      return { vpkgId: `vpkg-${config.manifestRef}`, manifest: manifestValue };
+    }
+    case 'DEPLOY_SERVICE': {
+      const vpkgId = resolveReferenceValue(config.vpkgRef, state, inputs);
+      if (typeof vpkgId !== 'string' && typeof vpkgId !== 'object') {
+        throw new Error(`DEPLOY SERVICE expected reference to VPKG result for ${config.vpkgRef}`);
+      }
+      const serviceName = config.serviceName;
+      const resolvedId = typeof vpkgId === 'string' ? vpkgId : (vpkgId as any).vpkgId;
+      if (context?.serviceDeployer) {
+        return context.serviceDeployer(
+          { vpkgId: resolvedId, serviceName },
+          { projectId: context.projectId, runId: context.runId, step: stepName },
+        );
+      }
+      return { service: serviceName, endpoint: `/s/${serviceName}`, vpkgId: resolvedId };
+    }
     case 'OUTPUT':
       return resolveDataset(config.source, state, inputs);
+    case 'OUTPUT_TEXT': {
+      const text = resolveLiteral(config.value, state, inputs);
+      if (typeof text === 'string' && context?.textCollector) {
+        await context.textCollector(text, { projectId: context.projectId, runId: context.runId, step: stepName });
+      }
+      return text;
+    }
     default: {
       const exhaustive: never = config;
       throw new Error(`Unsupported FLOW node kind: ${(exhaustive as { kind?: string }).kind ?? 'unknown'}`);
@@ -110,23 +154,119 @@ async function executeNode(
   }
 }
 
+function resolveLiteral(value: unknown, state: Record<string, unknown>, inputs: Record<string, unknown>): any {
+  if (Array.isArray(value)) {
+    return value.map((entry) => resolveLiteral(entry, state, inputs));
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = resolveLiteral(nested, state, inputs);
+    }
+    return result;
+  }
+  return resolveValue(value, state, inputs);
+}
+
 function resolvePayload(payload: Record<string, unknown>, state: Record<string, unknown>, inputs: Record<string, unknown>) {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload)) {
-    result[key] = resolveValue(value, state, inputs);
+    result[key] = resolveLiteral(value, state, inputs);
   }
   return result;
 }
 
 function resolveValue(value: unknown, state: Record<string, unknown>, inputs: Record<string, unknown>): unknown {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return resolvePayload(value as Record<string, unknown>, state, inputs);
+  if (value && typeof value === 'object') {
+    return resolveLiteral(value, state, inputs);
   }
   if (typeof value === 'string') {
-    if (value in state) return state[value];
-    if (value in inputs) return inputs[value];
+    const scoped = resolveReferenceValue(value, state, inputs);
+    if (scoped !== undefined) {
+      return scoped;
+    }
   }
   return value;
+}
+
+function resolveReferenceValue(token: string, state: Record<string, unknown>, inputs: Record<string, unknown>): unknown {
+  if (token in state) {
+    return state[token];
+  }
+  if (token in inputs) {
+    return inputs[token];
+  }
+  const segments = parseReferenceSegments(token);
+  if (!segments.length) {
+    return undefined;
+  }
+  const [head, ...rest] = segments;
+  let current: any;
+  if (typeof head === 'string' && head in state) {
+    current = state[head];
+  } else if (typeof head === 'string' && head in inputs) {
+    current = inputs[head];
+  } else {
+    return undefined;
+  }
+  for (const segment of rest) {
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+    if (typeof segment === 'number') {
+      if (!Array.isArray(current)) {
+        return undefined;
+      }
+      current = current[segment];
+    } else if (typeof current === 'object') {
+      current = (current as Record<string, unknown>)[segment];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+function parseReferenceSegments(token: string): Array<string | number> {
+  if (!token.includes('.') && !token.includes('[')) {
+    return token ? [token] : [];
+  }
+  const result: Array<string | number> = [];
+  let buffer = '';
+  for (let idx = 0; idx < token.length; idx += 1) {
+    const char = token[idx];
+    if (char === '.') {
+      if (buffer) {
+        result.push(buffer);
+        buffer = '';
+      }
+      continue;
+    }
+    if (char === '[') {
+      if (buffer) {
+        result.push(buffer);
+        buffer = '';
+      }
+      let closing = token.indexOf(']', idx);
+      if (closing === -1) {
+        closing = token.length;
+      }
+      const inner = token.slice(idx + 1, closing);
+      const num = Number(inner);
+      if (!Number.isNaN(num)) {
+        result.push(num);
+      } else if (inner) {
+        result.push(inner);
+      }
+      idx = closing;
+      continue;
+    }
+    buffer += char;
+  }
+  if (buffer) {
+    result.push(buffer);
+  }
+  return result;
 }
 
 function loadCsvInput(inputs: Record<string, unknown>, key: string): TableData {

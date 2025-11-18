@@ -14,9 +14,40 @@ export type FlowExecutionMode = 'auto' | 'sync' | 'async';
 
 export type FlowAgentHandler = (agent: string, payload: Record<string, unknown>, context: { projectId: string; runId: string }) => Promise<any> | any;
 
+export type FlowApxExecutor = (target: string, payload: any, context: { projectId: string; runId: string; step: string }) => Promise<any> | any;
+export type FlowVpkgBuilder = (manifestInput: unknown, context: { projectId: string; runId: string; step: string }) => Promise<any> | any;
+export type FlowServiceDeployer = (
+  params: { vpkgId: string; serviceName: string; payload?: Record<string, unknown> },
+  context: { projectId: string; runId: string; step: string },
+) => Promise<any> | any;
+export type FlowTextCollector = (text: string, context: { projectId: string; runId: string; step: string }) => Promise<void> | void;
+
+export type FlowServiceHandlers =
+  | FlowAgentHandler
+  | {
+      agentHandler?: FlowAgentHandler;
+      apxExecutor?: FlowApxExecutor;
+      vpkgBuilder?: FlowVpkgBuilder;
+      serviceDeployer?: FlowServiceDeployer;
+      textCollector?: FlowTextCollector;
+    };
+
 export class FlowService {
   private plans = new Map<string, StoredFlowPlan>();
-  constructor(private agentHandler?: FlowAgentHandler) {}
+  private agentHandler?: FlowAgentHandler;
+  private handlers: Exclude<FlowServiceHandlers, FlowAgentHandler> | undefined;
+
+  constructor(handlerOrOptions?: FlowServiceHandlers) {
+    if (!handlerOrOptions) {
+      return;
+    }
+    if (typeof handlerOrOptions === 'function') {
+      this.agentHandler = handlerOrOptions;
+      return;
+    }
+    this.handlers = handlerOrOptions;
+    this.agentHandler = handlerOrOptions.agentHandler;
+  }
 
   parse(source: string, options?: ParseOptions): ParseResult {
     return parseFlowSource(source, options);
@@ -64,6 +95,18 @@ export class FlowService {
       agentRunner: this.agentHandler
         ? (agent, payload) => this.agentHandler!(agent, payload, { projectId, runId })
         : undefined,
+      apxExecutor: this.handlers?.apxExecutor
+        ? (target, payload, ctx) => this.handlers!.apxExecutor!(target, payload, { ...ctx, projectId, runId })
+        : undefined,
+      vpkgBuilder: this.handlers?.vpkgBuilder
+        ? (manifest, ctx) => this.handlers!.vpkgBuilder!(manifest, { ...ctx, projectId, runId })
+        : undefined,
+      serviceDeployer: this.handlers?.serviceDeployer
+        ? (params, ctx) => this.handlers!.serviceDeployer!(params, { ...ctx, projectId, runId })
+        : undefined,
+      textCollector: this.handlers?.textCollector
+        ? (text, ctx) => this.handlers!.textCollector!(text, { ...ctx, projectId, runId })
+        : undefined,
     };
     return executeFlowPlan(plan, inputs, mode, context);
   }
@@ -95,7 +138,11 @@ const FLOW_OPS = [
   { name: 'RUN_JOB', version: '1.0', category: 'runtime', description: 'Execute VVM/Grid job.' },
   { name: 'CALL', version: '1.0', category: 'runtime', description: 'Call local/library function.' },
   { name: 'ASK_AI', version: '1.0', category: 'ai', description: 'Ask Knowledge Fabric / AI Fabric.' },
+  { name: 'APX_EXEC', version: '1.0', category: 'runtime', description: 'Invoke APIX contracts / infra ops.' },
+  { name: 'BUILD_VPKG', version: '1.0', category: 'runtime', description: 'Build a VPKG bundle from manifest path.' },
+  { name: 'DEPLOY_SERVICE', version: '1.0', category: 'runtime', description: 'Deploy a service from VPKG output.' },
   { name: 'OUTPUT', version: '1.0', category: 'io', description: 'Emit results to user/log.' },
+  { name: 'OUTPUT_TEXT', version: '1.0', category: 'io', description: 'Emit textual summary/result.' },
   { name: 'STORE', version: '1.0', category: 'io', description: 'Persist table/model artifacts.' },
   { name: 'CUSTOM', version: '1.0', category: 'fallback', description: 'Custom user-defined logic.' },
 ];

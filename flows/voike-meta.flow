@@ -1,0 +1,201 @@
+FLOW "VOIKE META — Core + Self-Evolution"
+
+INPUTS
+  text rootProjectId
+  text voikeRepoUrl
+  text targetEnv
+END INPUTS
+
+STEP bootstrap_db =
+  APX_EXEC "infra.ensureDatabase"
+    WITH {
+      "projectId": rootProjectId,
+      "targetEnv": targetEnv
+    }
+
+STEP bootstrap_kernel8 =
+  APX_EXEC "kernel.ensureKernel8"
+    WITH {
+      "projectId": rootProjectId,
+      "config": {
+        "energyLimits": { "query": 1000, "ai": 2000 },
+        "daiEnabled": true
+      }
+    }
+
+STEP bootstrap_kernel9 =
+  APX_EXEC "kernel.ensureKernel9"
+    WITH {
+      "projectId": rootProjectId,
+      "config": {
+        "metaPlanning": true,
+        "ledgerTracing": true
+      }
+    }
+
+STEP vasm_runtime =
+  APX_EXEC "vm.ensureVasmRuntime"
+    WITH {
+      "projectId": rootProjectId,
+      "targets": [ "x86_64", "arm64" ]
+    }
+
+STEP register_envs =
+  APX_EXEC "vvm.registerEnvs"
+    WITH {
+      "projectId": rootProjectId,
+      "envs": [
+        { "name": "node-web-20",        "runtime": "node",    "kind": "process" },
+        { "name": "python-web-3.11",    "runtime": "python",  "kind": "process" },
+        { "name": "ml-python-tf2.15",   "runtime": "python",  "kind": "process", "gpu": true },
+        { "name": "cuda-torch-2.3",     "runtime": "python",  "kind": "process", "gpu": true },
+        { "name": "cpp-runtime-glibc",  "runtime": "cpp",     "kind": "process" },
+        { "name": "dotnet-8-api",       "runtime": "dotnet",  "kind": "process" }
+      ]
+    }
+
+STEP register_vvms =
+  APX_EXEC "vvm.registerDescriptors"
+    WITH {
+      "projectId": rootProjectId,
+      "descriptors": [
+        { "name": "voike-core-api",   "kind": "service", "env": "node-web-20" },
+        { "name": "voike-gateway",    "kind": "service", "env": "node-web-20" },
+        { "name": "voike-apix",       "kind": "service", "env": "node-web-20" },
+        { "name": "voike-ai-fabric",  "kind": "service", "env": "ml-python-tf2.15" },
+        { "name": "job.python-script", "kind": "job", "env": "python-web-3.11" },
+        { "name": "job.cpp-binary",    "kind": "job", "env": "cpp-runtime-glibc" },
+        { "name": "job.cuda-torch",    "kind": "job", "env": "cuda-torch-2.3" }
+      ]
+    }
+
+STEP flow_compiler =
+  APX_EXEC "flow.enableCompiler"
+    WITH {
+      "projectId": rootProjectId,
+      "vasmTarget": vasm_runtime.targets[0],
+      "features": [ "APX_EXEC", "BUILD_VPKG", "DEPLOY_SERVICE", "RUN_JOB" ]
+    }
+
+STEP clone_repo =
+  APX_EXEC "source.cloneRepo"
+    WITH {
+      "projectId": rootProjectId,
+      "gitUrl": voikeRepoUrl,
+      "branch": "main"
+    }
+
+STEP generate_core_vpkg =
+  APX_EXEC "vpkgs.createFromProject"
+    WITH {
+      "projectId": rootProjectId,
+      "repoPath": clone_repo.path,
+      "services": [
+        { "name": "core-api", "env": "node-web-20", "vvm": "voike-core-api", "port": 8080 },
+        { "name": "gateway",  "env": "node-web-20", "vvm": "voike-gateway",  "port": 8081 },
+        { "name": "apix",     "env": "node-web-20", "vvm": "voike-apix",     "port": 8082 }
+      ],
+      "metadata": {
+        "name": "voike-core",
+        "version": "3.0.0-meta"
+      }
+    }
+
+STEP build_core =
+  BUILD_VPKG generate_core_vpkg.vpkgManifestPath
+
+STEP launch_core =
+  DEPLOY_SERVICE build_core.vpkgId "core-api"
+
+STEP launch_gateway =
+  DEPLOY_SERVICE build_core.vpkgId "gateway"
+
+STEP launch_apix =
+  DEPLOY_SERVICE build_core.vpkgId "apix"
+
+STEP configure_gateway =
+  APX_EXEC "gateway.configure"
+    WITH {
+      "projectId": rootProjectId,
+      "routes": [
+        { "pattern": "/s/:id", "targetService": "core-api" },
+        { "pattern": "/apix/*", "targetService": "apix" }
+      ]
+    }
+
+STEP seed_playground =
+  APX_EXEC "playground.seed"
+    WITH {
+      "projectId": rootProjectId,
+      "examples": [
+        "flows/fast-agentic-answer.flow",
+        "flows/onboard-foreign-app.flow",
+        "flows/voike-meta.flow",
+        "flows/voike-self-evolve.flow"
+      ]
+    }
+
+STEP register_agents =
+  APX_EXEC "orchestrator.registerAgents"
+    WITH {
+      "projectId": rootProjectId,
+      "agents": [
+        { "name": "agent.planner",  "role": "planner" },
+        { "name": "agent.codegen",  "role": "codegen" },
+        { "name": "agent.tester",   "role": "tester" },
+        { "name": "agent.infra",    "role": "infra" },
+        { "name": "agent.product",  "role": "product" },
+        { "name": "agent.stitcher", "role": "stitcher" },
+        { "name": "agent.onboard",  "role": "onboarding" }
+      ]
+    }
+
+STEP run_regression =
+  APX_EXEC "tests.runSuite"
+    WITH {
+      "projectId": rootProjectId,
+      "suites": [ "core-api", "ai-fabric", "vvm", "flow-compiler" ],
+      "mode": "regression"
+    }
+
+STEP run_perf =
+  APX_EXEC "tests.runSuite"
+    WITH {
+      "projectId": rootProjectId,
+      "suites": [ "query-path", "ai-path", "apix-exec" ],
+      "mode": "perf"
+    }
+
+STEP snapshot_capsule =
+  APX_EXEC "capsules.create"
+    WITH {
+      "projectId": rootProjectId,
+      "label": "voike-core-3.0.0-meta",
+      "include": {
+        "flows": true,
+        "vpkg": true,
+        "vvm": true,
+        "envs": true,
+        "config": true
+      }
+    }
+
+STEP register_self_evolve =
+  APX_EXEC "orchestrator.registerFlow"
+    WITH {
+      "projectId": rootProjectId,
+      "flowPath": "flows/voike-self-evolve.flow",
+      "name": "VOIKE SELF EVOLVE",
+      "description": "Use agents + FLOW to plan, code, test, and deploy future VOIKE changes."
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "VOIKE META BOOTSTRAP COMPLETE\n" +
+    "Core API: " + launch_core.publicUrl + "\n" +
+    "Gateway:  " + launch_gateway.publicUrl + "\n" +
+    "APIX:     " + launch_apix.publicUrl + "\n" +
+    "Capsule:  " + snapshot_capsule.capsuleId + "\n"
+  )
+
+END FLOW
