@@ -15,7 +15,18 @@ fi
 
 trap "kill 0" EXIT
 
-mkdir -p "$(dirname "${ZONE_PATH}")" /etc/knot
+mkdir -p "$(dirname "${ZONE_PATH}")" /etc/knot /run/knot
+chmod 755 /run/knot
+if id knot &>/dev/null; then
+  chown -R knot:knot /run/knot "$(dirname "${ZONE_PATH}")" || true
+fi
+
+ensure_zone_perms() {
+  if id knot &>/dev/null; then
+    chown knot:knot "${ZONE_PATH}" || true
+  fi
+  chmod 644 "${ZONE_PATH}"
+}
 
 fetch_zone() {
   local tmp
@@ -24,6 +35,7 @@ fetch_zone() {
     "${CORE_URL}/vdns/zones/${ZONE_ID}/export" >"${tmp}"; then
     if [[ ! -f "${ZONE_PATH}" ]]; then
       mv "${tmp}" "${ZONE_PATH}"
+      ensure_zone_perms
       echo "[vdns-primary] zone ${ZONE_ID} initialized from ${CORE_URL}"
       return 0
     fi
@@ -32,6 +44,7 @@ fetch_zone() {
       return 1
     fi
     mv "${tmp}" "${ZONE_PATH}"
+    ensure_zone_perms
     echo "[vdns-primary] zone ${ZONE_ID} updated from ${CORE_URL}"
     return 0
   else
@@ -79,3 +92,9 @@ echo "[vdns-primary] starting knotd for ${ZONE_DOMAIN}"
 KNOT_PID=$!
 watch_zone &
 wait "${KNOT_PID}"
+ensure_zone_perms() {
+  if id knot &>/dev/null; then
+    chown knot:knot "${ZONE_PATH}" || true
+  fi
+  chmod 644 "${ZONE_PATH}"
+}
