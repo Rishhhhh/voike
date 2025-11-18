@@ -215,6 +215,32 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - `python scripts/voike_regression.py --grid-fib 2000` – end-to-end regression harness that now includes a grid Fibonacci job (the script can be wrapped into a VPKG via `voike wrap scripts/voike_regression.py` and launched like any other workload).
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 
+## 6.1 SNRL + V-DNS (Phase 1 foundation)
+- `/snrl/resolve` returns a signed endpoint recommendation for any domain using the new FLOW plan `flows/snrl-semantic.flow`. The resolver runs through FLOW → APX → `SnrlService`, so you can iterate on the plan without redeploying binaries.
+- `config/snrl-endpoints.json` seeds the initial POP metadata. Update it or feed from MCP to reflect real POPs.
+- `node scripts/set_shared_db.js --url <postgres-url>` configures both Mac + Linux nodes to share a single Postgres control plane so mesh state, grid jobs, and SNRL flows stay in sync.
+
+Example:
+
+```bash
+curl -X POST http://localhost:8080/snrl/resolve \
+  -H 'content-type: application/json' \
+  -H 'x-voike-api-key: <PROJECT_KEY>' \
+  -d '{ "domain": "api.voike.com", "client": { "region": "ap-sg", "capabilities": ["http","gpu"] } }'
+```
+
+Response:
+
+```json
+{
+  "domain": "api.voike.com",
+  "candidates": [ ... ],
+  "signature": "<sha256>",
+  "issuedAt": "2025-11-18T10:00:00Z",
+  "ttl": 30
+}
+```
+
 ### LLM configuration
 - Set `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com`), and `OPENAI_MODEL` (`gpt-5.1` by default) in `.env` to enable real GPT-backed flows (`/agents/fast-answer`, `flows/*` with `RUN AGENT`).
 - See `flow/docs/VPKG-spec.md` for the manifest format and what files are included inside each bundle.

@@ -47,7 +47,8 @@
       "@env/*": ["src/env/*"],
       "@orchestrator/*": ["src/orchestrator/*"],
       "@agents/*": ["src/agents/*"],
-      "@onboard/*": ["src/onboard/*"]
+      "@onboard/*": ["src/onboard/*"],
+      "@snrl/*": ["src/snrl/*"]
     }
   },
   "include": ["src", "flow/src", "vasm/src", "tests"]

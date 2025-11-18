@@ -40,6 +40,7 @@ import { VpkgService, type VpkgManifest } from '@vpkg/service';
 import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { AgentOpsService } from '@agents/service';
+import { SnrlController } from '../snrl/controller';
 import {
   addWaitlistEntry,
   approveWaitlistEntry,
@@ -372,6 +373,17 @@ const querySchema = z.object({
   filters: z.record(z.any()).optional(),
   target: z
     .enum(['sql', 'doc', 'vector', 'kv', 'graph', 'timeseries', 'auto'])
+    .optional(),
+});
+
+const snrlResolveSchema = z.object({
+  domain: z.string().min(1),
+  client: z
+    .object({
+      region: z.string().min(1).optional(),
+      latencyMs: z.number().optional(),
+      capabilities: z.array(z.string()).optional(),
+    })
     .optional(),
 });
 
@@ -762,6 +774,7 @@ export const buildServer = ({
   env,
   orchestrator,
   agentOps,
+  snrl,
 }: ApiDeps & {
   blobgrid: BlobGridService;
   edge: EdgeService;
@@ -784,6 +797,7 @@ export const buildServer = ({
   env: EnvironmentService;
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
+  snrl: SnrlController;
 }): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
   const apiKeyHeaderName = 'x-voike-api-key';
@@ -822,6 +836,7 @@ export const buildServer = ({
       flow: ['/flow/parse', '/flow/plan', '/flow/execute', '/flow/plans', '/flow/ops'],
       vpkg: ['/vpkgs (POST, GET)', '/vpkgs/:id/launch', '/vpkgs/download?name=…', '/apps', '/apps/:id'],
       env: ['/env/descriptors (POST, GET)', '/env/descriptors/:id', '/env/descriptors/:id/resolve'],
+      snrl: ['/snrl/resolve'],
     },
     curlExamples: [
       `curl -X POST <VOIKE_ENDPOINT>/waitlist \\
@@ -1950,6 +1965,16 @@ export const buildServer = ({
       return { error: `FLOW op ${name} not found` };
     }
     return op;
+  });
+
+  app.post('/snrl/resolve', { preHandler: requireApiKey }, async (request, reply) => {
+    try {
+      const body = snrlResolveSchema.parse(request.body || {});
+      return await snrl.resolve(body.domain, body.client);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
   });
 
   app.post('/vpkgs', { preHandler: requireApiKey }, async (request, reply) => {

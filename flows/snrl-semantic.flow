@@ -1,0 +1,38 @@
+FLOW "SNRL Semantic Resolution"
+
+INPUTS
+  text domain
+  text clientRegion optional
+  number clientLatency optional
+  json clientCapabilities optional
+END INPUTS
+
+STEP lookup =
+  APX_EXEC "snrl.lookup"
+    WITH {
+      "domain": domain,
+      "client": {
+        "region": clientRegion,
+        "latencyMs": clientLatency,
+        "capabilities": clientCapabilities
+      }
+    }
+
+STEP signed =
+  APX_EXEC "snrl.sign"
+    WITH {
+      "domain": domain,
+      "candidates": lookup.candidates,
+      "meta": { "evaluatedAt": lookup.evaluatedAt }
+    }
+
+STEP final =
+  APX_EXEC "snrl.finalize"
+    WITH {
+      "domain": domain,
+      "candidates": lookup.candidates,
+      "signature": signed.signature,
+      "meta": signed.meta
+    }
+
+END FLOW

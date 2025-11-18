@@ -277,7 +277,41 @@ See `flow/docs/VPKG-spec.md` for bundle format details.
 
 These endpoints back the forthcoming `voike task` / `voike evolve` CLI experience and lay the groundwork for fully agentic evolution.
 
-### 2.23 Agent Ops
+### 2.23 SNRL Resolve
+- `POST /snrl/resolve` – Semantic Network Resolution Layer entrypoint. Requires `X-VOIKE-API-Key`.
+
+Request:
+```json
+{
+  "domain": "api.voike.com",
+  "client": {
+    "region": "ap-sg",
+    "latencyMs": 25,
+    "capabilities": ["http", "gpu"]
+  }
+}
+```
+
+Response:
+```json
+{
+  "domain": "api.voike.com",
+  "candidates": [
+    { "id": "edge-sg1", "host": "edge-sg1.voike.net", "ip": "103.1.212.10", "port": 443, "region": "ap-sg", "capabilities": ["http","gpu"], "score": 1.18 },
+    { "id": "edge-us1", "host": "edge-us1.voike.net", "ip": "198.51.100.20", "port": 443, "region": "us-east", "capabilities": ["http"], "score": 0.77 }
+  ],
+  "signature": "a11ce6f4a...",
+  "issuedAt": "2025-11-18T11:00:00.000Z",
+  "ttl": 30
+}
+```
+
+Notes:
+- Backed by `flows/snrl-semantic.flow` which orchestrates lookup → signing via FLOW APX opcodes.
+- Endpoints initially sourced from `config/snrl-endpoints.json`; update through MCP tools to reflect real POPs.
+- Responses are cryptographically signed so clients can verify provenance.
+
+### 2.24 Agent Ops
 - `POST /agents/fast-answer` – run the fast multi-agent FLOW (planner → reasoning → facts → code → critique → stitch). Returns question, segments, taskId and the stitched answer; all steps are logged under `/orchestrator/tasks`.
 - APIX adds ops:
   - `agent.taskSplit`, `agent.reasoning`, `agent.facts`, `agent.code`, `agent.critique`, `agent.stitcher`, `agent.fastAnswer`.

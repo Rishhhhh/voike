@@ -31,6 +31,8 @@ import { VpkgService } from '@vpkg/service';
 import { AgentOpsService } from '@agents/service';
 import { GptClient } from '@agents/gpt';
 import { OnboardService } from '@onboard/service';
+import { SnrlService } from './snrl/service';
+import { SnrlController } from './snrl/controller';
 
 const bootstrap = async () => {
   const genesis = new GenesisService({
@@ -107,6 +109,7 @@ const bootstrap = async () => {
     : undefined;
   const agentOps = new AgentOpsService(orchestrator, { llm: gptClient });
   const onboard = new OnboardService(orchestrator);
+  const snrl = new SnrlService();
   const flow = new FlowService({
     agentHandler: (agent, payload, ctx) => {
       if (['planner', 'reasoning', 'facts', 'code', 'critique', 'stitcher'].includes(agent)) {
@@ -163,11 +166,18 @@ const bootstrap = async () => {
             assignedNodeId: job.assigned_node_id,
           };
         }
+        case 'snrl.lookup':
+          return snrl.lookup(String(payload?.domain || ''), payload?.client);
+        case 'snrl.sign':
+          return snrl.sign(payload || {});
+        case 'snrl.finalize':
+          return snrl.finalize(payload || {});
         default:
           throw new Error(`Unknown APX_EXEC target ${target}`);
       }
     },
   });
+  const snrlController = new SnrlController(flow, snrl);
   const vpkg = new VpkgService();
   const captureKnowledge = async (node: {
     projectId?: string;
@@ -303,6 +313,7 @@ const bootstrap = async () => {
     vpkg,
     orchestrator,
     agentOps,
+    snrl: snrlController,
   });
   grid.startScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });

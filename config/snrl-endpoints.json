@@ -1,0 +1,38 @@
+[
+  {
+    "id": "edge-sg1",
+    "host": "edge-sg1.voike.net",
+    "ip": "103.1.212.10",
+    "port": 443,
+    "region": "ap-sg",
+    "weight": 1.0,
+    "capacityScore": 0.9,
+    "latencyBaselineMs": 20,
+    "capabilities": ["http", "gpu"],
+    "patterns": ["*.voike.com", "api.voike.com"]
+  },
+  {
+    "id": "edge-us1",
+    "host": "edge-us1.voike.net",
+    "ip": "198.51.100.20",
+    "port": 443,
+    "region": "us-east",
+    "weight": 0.95,
+    "capacityScore": 0.85,
+    "latencyBaselineMs": 90,
+    "capabilities": ["http"],
+    "patterns": ["*.voike.com", "studio.voike.com"]
+  },
+  {
+    "id": "edge-eu1",
+    "host": "edge-eu1.voike.net",
+    "ip": "203.0.113.30",
+    "port": 443,
+    "region": "eu-west",
+    "weight": 0.92,
+    "capacityScore": 0.8,
+    "latencyBaselineMs": 110,
+    "capabilities": ["http", "llm"],
+    "patterns": ["*.voike.eu", "api.voike.com"]
+  }
+]
