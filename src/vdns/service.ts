@@ -6,6 +6,7 @@ export type VdnsRecord = {
   name: string;
   value: string;
   ttl?: number;
+  replace?: boolean;
 };
 
 export type VdnsZone = {
@@ -59,7 +60,11 @@ export class VdnsService {
     const zone = this.getZone(zoneId);
     if (!zone) throw new Error(`Zone ${zoneId} not found`);
     if (record) {
-      zone.records.push(record);
+      const { replace, ...clean } = record;
+      if (replace) {
+        zone.records = zone.records.filter((existing) => !(existing.type === clean.type && existing.name === clean.name));
+      }
+      zone.records.push(clean);
       zone.serial += 1;
       this.save();
     }

@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import path from 'path';
+import { promises as fs } from 'fs';
 import config from '@config';
 import { buildServer } from '@api/http';
 import { createPool, VDBClient } from '@vdb/index';
@@ -34,8 +36,13 @@ import { OnboardService } from '@onboard/service';
 import { SnrlService } from './snrl/service';
 import { SnrlController } from './snrl/controller';
 import { VdnsService } from './vdns/service';
+import { syncFromGenesis, registerWithGenesis } from './genesis';
+import { EvolutionAgentService } from '@orchestrator/evolution';
+
+const repoRoot = path.resolve(process.cwd());
 
 const bootstrap = async () => {
+  await syncFromGenesis();
   const genesis = new GenesisService({
     path: config.genesis.path,
     url: config.genesis.url,
@@ -110,10 +117,17 @@ const bootstrap = async () => {
     : undefined;
   const agentOps = new AgentOpsService(orchestrator, { llm: gptClient });
   const onboard = new OnboardService(orchestrator);
+  const evolveAgents = new EvolutionAgentService(orchestrator, { repoRoot, llm: gptClient });
   const snrl = new SnrlService();
   const vdns = new VdnsService();
   const flow = new FlowService({
-    agentHandler: (agent, payload, ctx) => {
+    agentHandler: async (agent, payload, ctx) => {
+      if (evolveAgents.supports(agent, payload)) {
+        if (!ctx.projectId || !ctx.runId) {
+          throw new Error('Flow context missing projectId/runId');
+        }
+        return evolveAgents.handle(agent, payload, { projectId: ctx.projectId, runId: ctx.runId });
+      }
       if (['planner', 'reasoning', 'facts', 'code', 'critique', 'stitcher'].includes(agent)) {
         return handleFastAgent(agentOps, agent, ctx.projectId, payload);
       }
@@ -182,6 +196,32 @@ const bootstrap = async () => {
         case 'vdns.addRecord':
           if (!payload?.zoneId || !payload?.record) throw new Error('zoneId and record required');
           return vdns.addRecord(payload.zoneId, payload.record);
+        case 'source.readFile': {
+          const relativePath = typeof payload?.path === 'string' ? payload.path : undefined;
+          const fallback = typeof payload?.fallback === 'string' ? payload.fallback : undefined;
+          if (relativePath) {
+            try {
+              const resolved = path.resolve(repoRoot, relativePath);
+              if (!resolved.startsWith(repoRoot)) {
+                throw new Error('source.readFile path escapes repo root');
+              }
+              const content = await fs.readFile(resolved, 'utf8');
+              return { path: relativePath, content, bytes: Buffer.byteLength(content, 'utf8') };
+            } catch (err) {
+              if (!fallback) {
+                throw err;
+              }
+            }
+          }
+          if (fallback) {
+            return {
+              path: relativePath || 'inline',
+              content: fallback,
+              bytes: Buffer.byteLength(fallback, 'utf8'),
+            };
+          }
+          throw new Error('source.readFile requires path or fallback content');
+        }
         default:
           throw new Error(`Unknown APX_EXEC target ${target}`);
       }
@@ -324,11 +364,13 @@ const bootstrap = async () => {
     orchestrator,
     agentOps,
     snrl: snrlController,
+    snrlService: snrl,
     vdns,
   });
   grid.startScheduler();
   await server.listen({ port: config.port, host: '0.0.0.0' });
   logger.info(`VOIKE-X listening on port ${config.port}`);
+  registerWithGenesis().catch((err) => logger.error({ err }, '[genesis] register failed'));
 };
 
 bootstrap().catch((err) => {

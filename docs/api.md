@@ -67,6 +67,8 @@ Response includes rows plus `meta.engine`, `meta.latencyMs`, `meta.correctedQuer
 - `GET /kernel/state` – `{ energy, dai, limits }` snapshot.
 - `GET /ledger/recent` – 20 most recent Truth Ledger entries scoped to the key.
 - `GET /ledger/{id}` – Fetch a single ledger entry (must belong to same project).
+- `POST /ledger/replay` – `{ since?, until?, limit?, entryIds? }` → ordered entries + `finalEnergy`; perfect for rollbacks and audits (see `scripts/ledger_replay.py` / `docs/resilience_playbooks.md`).
+- `POST /ledger/anchor` – same shape as replay request, returns `{ anchor, entryCount, firstTimestamp, lastTimestamp }` so you can notarize ledger segments.
 
 ### 2.4 MCP Tools
 - `GET /mcp/tools` – metadata for registered tools.
@@ -118,7 +120,13 @@ POST /grid/jobs
 ```
 The second payload spawns child jobs for each chunk, allowing different nodes to compute partial matrices; the parent job stitches results and returns `result.fib` plus a `segments` array of child job IDs so you can audit which node processed each slice.
 
-### 2.10 Playground APIs
+### 2.10 Capsules
+- `GET /capsules` – List recent capsule metadata for the current project (used by offline sync + resilience playbooks).
+- `POST /capsules` – Create capsule with `{ manifest, description?, labels? }`.
+- `GET /capsules/{capsuleId}` – Fetch manifest/details.
+- `POST /capsules/{capsuleId}/restore` – Trigger restore workflow (returns queued job payload).
+
+### 2.11 Playground APIs
 - `POST /playground/sessions` – bootstrap a dev sandbox tied to your project.
 - `POST /playground/snippets` – save code cells that mix `/query`, `/ingest`, `/blobs`, `/grid/jobs`.
 - `POST /playground/datasets` – upload sample datasets for experiments.
@@ -279,6 +287,9 @@ These endpoints back the forthcoming `voike task` / `voike evolve` CLI experienc
 
 ### 2.23 SNRL Resolve
 - `POST /snrl/resolve` – Semantic Network Resolution Layer entrypoint. Requires `X-VOIKE-API-Key`.
+- `GET /snrl/endpoints` (admin) – list configured POP endpoints.
+- `POST /snrl/endpoints` (admin) – upsert or replace endpoint metadata (id, host, ip, region, capabilities).
+- `DELETE /snrl/endpoints/:id` (admin) – remove a POP endpoint from the resolver set.
 
 Request:
 ```json
@@ -312,6 +323,7 @@ Notes:
 - Responses are cryptographically signed so clients can verify provenance.
 
 ### 2.24 VDNS Management
+- `POST /vdns/zones` (admin) – create or replace a full zone definition (zone metadata + records).
 - `GET /vdns/zones` (admin) – list configured zones.
 - `GET /vdns/zones/{zoneId}` / `GET /vdns/zones/{zoneId}/export` – inspect metadata or emit BIND/Knot zone files.
 - `POST /vdns/records` (admin) – append a DNS record and bump the zone serial (body: `{ zoneId, record }`).

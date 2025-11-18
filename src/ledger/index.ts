@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { DEFAULT_PROJECT_ID } from '@auth/index';
@@ -11,6 +12,13 @@ export type LedgerEntry = {
   energyBefore: number;
   energyAfter: number;
   meta?: Record<string, unknown>;
+};
+
+export type LedgerReplayOptions = {
+  since?: string;
+  until?: string;
+  limit?: number;
+  entryIds?: string[];
 };
 
 export const ensureLedgerTables = async (pool: Pool) => {
@@ -138,3 +146,74 @@ export const updateVirtualEnergy = async (
 };
 
 export { DEFAULT_PROJECT_ID };
+
+export const replayLedger = async (
+  pool: Pool,
+  projectId: string,
+  options: LedgerReplayOptions = {},
+) => {
+  const clauses = ['project_id = $1'];
+  const params: Array<string | number | string[]> = [projectId];
+  if (options.entryIds?.length) {
+    clauses.push(`id = ANY($${params.length + 1}::uuid[])`);
+    params.push(options.entryIds);
+  }
+  if (options.since) {
+    clauses.push(`timestamp >= $${params.length + 1}`);
+    params.push(options.since);
+  }
+  if (options.until) {
+    clauses.push(`timestamp <= $${params.length + 1}`);
+    params.push(options.until);
+  }
+  let limitClause = '';
+  if (options.limit) {
+    limitClause = `LIMIT ${Math.min(Math.max(options.limit, 1), 500)}`;
+  }
+  const query = `
+    SELECT *
+    FROM truth_ledger
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY timestamp ASC
+    ${limitClause}
+  `;
+  const { rows } = await pool.query(query, params);
+  const count = rows.length;
+  const first = rows[0];
+  const last = rows[count - 1];
+  const finalEnergy = last?.energy_after ?? (await getVirtualEnergy(pool, projectId));
+  return {
+    projectId,
+    count,
+    firstTimestamp: first?.timestamp || null,
+    lastTimestamp: last?.timestamp || null,
+    finalEnergy,
+    entries: rows,
+  };
+};
+
+export const anchorLedgerEntries = async (
+  pool: Pool,
+  projectId: string,
+  options: LedgerReplayOptions = {},
+) => {
+  const replay = await replayLedger(pool, projectId, options);
+  const digest = crypto.createHash('sha256');
+  replay.entries.forEach((entry: any) => {
+    digest.update(
+      JSON.stringify({
+        id: entry.id,
+        timestamp: entry.timestamp,
+        chosen: entry.chosen,
+        energyAfter: entry.energy_after,
+      }),
+    );
+  });
+  return {
+    projectId,
+    entryCount: replay.count,
+    anchor: digest.digest('hex'),
+    firstTimestamp: replay.firstTimestamp,
+    lastTimestamp: replay.lastTimestamp,
+  };
+};

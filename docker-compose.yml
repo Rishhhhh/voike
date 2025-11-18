@@ -35,11 +35,74 @@ services:
       QUERY_TIMEOUT_MS: ${QUERY_TIMEOUT_MS:-15000}
       WS_ENABLED: ${WS_ENABLED:-'true'}
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-'true'}
+      GENESIS_URL: ${GENESIS_URL:-https://voike.supremeuf.com}
+      GENESIS_ADMIN_TOKEN: ${GENESIS_ADMIN_TOKEN:-voike-admin-placeholder}
+      GENESIS_BOOTSTRAP: ${GENESIS_BOOTSTRAP:-1}
+      GENESIS_REGISTER: ${GENESIS_REGISTER:-1}
+      VOIKE_PUBLIC_HOSTNAME: ${VOIKE_PUBLIC_HOSTNAME:-voike-pop-local}
+      VOIKE_PUBLIC_IP: ${VOIKE_PUBLIC_IP:-127.0.0.1}
+      VOIKE_PUBLIC_PORT: ${VOIKE_PUBLIC_PORT:-443}
+      VOIKE_PUBLIC_REGION: ${VOIKE_PUBLIC_REGION:-dev-local}
+      VOIKE_PUBLIC_CAPABILITIES: ${VOIKE_PUBLIC_CAPABILITIES:-http}
+      VOIKE_PUBLIC_PATTERNS: ${VOIKE_PUBLIC_PATTERNS:-'*.voike.supremeuf.com'}
+      VOIKE_PUBLIC_ADD_NS: ${VOIKE_PUBLIC_ADD_NS:-0}
+      VOIKE_PUBLIC_TTL: ${VOIKE_PUBLIC_TTL:-60}
+      VOIKE_PUBLIC_REPLACE: ${VOIKE_PUBLIC_REPLACE:-1}
     ports:
       - '8080:8080'
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  snrl-pop:
+    build: ./services/snrl-pop
+    environment:
+      SNRL_CORE_URL: http://backend:8080
+      SNRL_API_KEY: ${SNRL_API_KEY:-voike-playground-placeholder}
+      SNRL_POP_REGION: ${SNRL_POP_REGION:-dev-local}
+      SNRL_POP_CAPABILITIES: ${SNRL_POP_CAPABILITIES:-http}
+    ports:
+      - '8053:8053'
+      - '1053:53/udp'
+      - '1053:53/tcp'
+      - '8853:853'
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  vdns-primary:
+    build: ./services/vdns-primary
+    environment:
+      VOIKE_CORE_URL: http://backend:8080
+      VOIKE_ADMIN_TOKEN: ${VOIKE_ADMIN_TOKEN:-voike-admin-placeholder}
+      VDNS_ZONE_ID: ${VDNS_ZONE_ID:-voike-com}
+      VDNS_ZONE_DOMAIN: ${VDNS_ZONE_DOMAIN:-voike.supremeuf.com.}
+      VDNS_REFRESH_SECONDS: ${VDNS_REFRESH_SECONDS:-60}
+    ports:
+      - '2053:53/udp'
+      - '2053:53/tcp'
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  vdns-secondary:
+    build: ./services/vdns-secondary
+    environment:
+      VOIKE_CORE_URL: http://backend:8080
+      VOIKE_ADMIN_TOKEN: ${VOIKE_ADMIN_TOKEN:-voike-admin-placeholder}
+      VDNS_ZONE_ID: ${VDNS_ZONE_ID:-voike-com}
+      VDNS_ZONE_DOMAIN: ${VDNS_ZONE_DOMAIN:-voike.supremeuf.com.}
+      VDNS_IDENTITY: voike-vdns-secondary
+      VDNS_REFRESH_SECONDS: ${VDNS_REFRESH_SECONDS:-60}
+    ports:
+      - '3053:53/udp'
+      - '3053:53/tcp'
+    depends_on:
+      backend:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

@@ -1,0 +1,43 @@
+name: Flow Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  flow-plan:
+    runs-on: ubuntu-latest
+    env:
+      VOIKE_API_URL: ${{ secrets.VOIKE_API_URL }}
+      VOIKE_API_KEY: ${{ secrets.VOIKE_API_KEY }}
+      VOIKE_PROJECT_ID: ${{ secrets.VOIKE_PROJECT_ID }}
+      FLOW_FILES: "flows/voike-regression.flow flows/voike-self-evolve.flow flows/voike-grid.flow"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Skip when VOIKE secrets are not configured
+        if: env.VOIKE_API_URL == '' || env.VOIKE_API_KEY == '' || env.VOIKE_PROJECT_ID == ''
+        run: echo "VOIKE secrets missing; skipping flow plan tests."
+
+      - name: Plan FLOW sources against Playground
+        if: env.VOIKE_API_URL != '' && env.VOIKE_API_KEY != '' && env.VOIKE_PROJECT_ID != ''
+        run: |
+          for FLOW in $FLOW_FILES; do
+            echo "Planning $FLOW"
+            SOURCE=$(jq -Rs . < "$FLOW")
+            RESPONSE=$(curl -sf -X POST "$VOIKE_API_URL/flow/plan" \
+              -H "content-type: application/json" \
+              -H "x-voike-api-key: $VOIKE_API_KEY" \
+              -d "{\"source\":$SOURCE}")
+            PLAN_ID=$(echo "$RESPONSE" | jq -r '.id // .planId')
+            if [[ -z "$PLAN_ID" || "$PLAN_ID" == "null" ]]; then
+              echo "$RESPONSE"
+              exit 1
+            fi
+            echo "::notice::Planned $FLOW as $PLAN_ID"
+          done

@@ -1,0 +1,56 @@
+name: Agentic Flow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  self-evolve:
+    runs-on: ubuntu-latest
+    env:
+      VOIKE_API_URL: ${{ secrets.VOIKE_API_URL }}
+      VOIKE_API_KEY: ${{ secrets.VOIKE_API_KEY }}
+      VOIKE_PROJECT_ID: ${{ secrets.VOIKE_PROJECT_ID }}
+      FLOW_FILE: flows/voike-self-evolve.flow
+      SPEC_FILE: docs/phase5_agents.md
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log spec digest
+        run: |
+          if [[ ! -f "$SPEC_FILE" ]]; then
+            echo "::warning::Spec file $SPEC_FILE missing"
+          else
+            shasum -a 1 "$SPEC_FILE"
+          fi
+
+      - name: Skip when VOIKE secrets are not configured
+        if: env.VOIKE_API_URL == '' || env.VOIKE_API_KEY == '' || env.VOIKE_PROJECT_ID == ''
+        run: |
+          echo "VOIKE secrets missing; skipping agentic flow run."
+
+      - name: Execute FLOW self-evolution
+        if: env.VOIKE_API_URL != '' && env.VOIKE_API_KEY != '' && env.VOIKE_PROJECT_ID != ''
+        run: |
+          SOURCE=$(jq -Rs . < "$FLOW_FILE")
+          SPEC=$(jq -Rs . < "$SPEC_FILE")
+
+          PLAN_RESPONSE=$(curl -sf -X POST "$VOIKE_API_URL/flow/plan" \
+            -H "content-type: application/json" \
+            -H "x-voike-api-key: $VOIKE_API_KEY" \
+            -d "{\"source\":$SOURCE}")
+
+          PLAN_ID=$(echo "$PLAN_RESPONSE" | jq -r '.id // .planId')
+          if [[ -z "$PLAN_ID" || "$PLAN_ID" == "null" ]]; then
+            echo "$PLAN_RESPONSE"
+            exit 1
+          fi
+
+          EXECUTE_RESPONSE=$(curl -sf -X POST "$VOIKE_API_URL/flow/execute" \
+            -H "content-type: application/json" \
+            -H "x-voike-api-key: $VOIKE_API_KEY" \
+            -d "{\"planId\":\"$PLAN_ID\",\"inputs\":{\"projectId\":\"$VOIKE_PROJECT_ID\",\"featureSpecPath\":\"$SPEC_FILE\",\"featureSpecOverride\":$SPEC},\"mode\":\"sync\"}")
+
+          echo "$EXECUTE_RESPONSE" | jq '.outputs."evolution summary" // .outputs'

@@ -23,17 +23,51 @@ export type SnrlClientContext = {
 
 export class SnrlService {
   private endpoints: SnrlEndpoint[] = [];
+  private readonly configPath: string;
 
   constructor(configPath = path.join(process.cwd(), 'config', 'snrl-endpoints.json')) {
-    this.loadEndpoints(configPath);
+    this.configPath = configPath;
+    this.loadEndpoints();
   }
 
-  private loadEndpoints(configPath: string) {
-    if (!fs.existsSync(configPath)) {
-      throw new Error(`SNRL endpoint config missing at ${configPath}`);
+  private loadEndpoints() {
+    if (!fs.existsSync(this.configPath)) {
+      throw new Error(`SNRL endpoint config missing at ${this.configPath}`);
     }
-    const raw = fs.readFileSync(configPath, 'utf-8');
+    const raw = fs.readFileSync(this.configPath, 'utf-8');
     this.endpoints = JSON.parse(raw) as SnrlEndpoint[];
+  }
+
+  private save() {
+    fs.writeFileSync(this.configPath, JSON.stringify(this.endpoints, null, 2));
+  }
+
+  listEndpoints() {
+    return this.endpoints;
+  }
+
+  upsertEndpoint(endpoint: SnrlEndpoint) {
+    if (!endpoint.id) {
+      throw new Error('SNRL endpoint requires id');
+    }
+    const idx = this.endpoints.findIndex((entry) => entry.id === endpoint.id);
+    if (idx >= 0) {
+      this.endpoints[idx] = endpoint;
+    } else {
+      this.endpoints.push(endpoint);
+    }
+    this.save();
+    return endpoint;
+  }
+
+  removeEndpoint(id: string) {
+    const next = this.endpoints.filter((endpoint) => endpoint.id !== id);
+    if (next.length === this.endpoints.length) {
+      throw new Error(`Endpoint ${id} not found`);
+    }
+    this.endpoints = next;
+    this.save();
+    return { removed: id };
   }
 
   lookup(domain: string, client?: SnrlClientContext) {

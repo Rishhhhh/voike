@@ -34,11 +34,24 @@ Everything is scoped by `X-VOIKE-API-Key`. Give each project its own key. No cro
 ```bash
 git clone https://github.com/Rishhhhh/voike.git
 cd voike
-npm install
-cp .env.example .env   # customize as needed
+cp .env.example .env   # edit any overrides
 docker compose up -d --build
 ```
-Docker spins up the backend plus Postgres. `/` serves the docs landing page; `/info` returns the same payload as JSON.
+That’s it. Every dependency (backend, Postgres, POP stack) builds inside Docker—no local `npm install`, no extra seeds, no manual scripts. As soon as the compose stack is up, `/` serves the docs landing page and `/info` exposes the same payload as JSON. Bring `.env` with you (or edit it in-place) and the exact same command works behind NAT, on laptops, bare metal, tunnels, static IPs, AWS, GCP—anywhere you have Docker and outbound internet.
+
+> Want the full architecture narrative? Read `docs/whitepaper.md`. Need API-level detail? See `docs/api.md`.
+
+**Docs Map**
+
+| Phase | Deliverables | Primary References |
+| --- | --- | --- |
+| **Phase 1–3** | Genesis seeding, shared Postgres, POP stack (SNRL + VDNS) | `docs/phase3_pop.md`, `docs/phase4_auto-bootstrap.md`, README §§2.6–2.7 |
+| **Phase 4** | Auto-bootstrap + auto-registration (`docker compose up -d --build` everywhere) | README §2.7, `docs/deployment_docker.md`, `docs/deployment_baremetal.md` |
+| **Phase 5** | Agentic FLOW (Planner/Codegen/Tester/Infra/Product) + CI | README §2.8, `docs/phase5_agents.md`, `.github/workflows/agentic-flow.yml` |
+| **Phase 6** | Deployment tooling, Helm/Compose templates, POP verification scripts | README §2.9, `docs/deployment_*`, `scripts/verify_pop.py`, `deploy/` |
+| **Phase 7** | Multi-platform adapters (Firebase/Supabase, Flask, React, Rust, Postgres) | README §2.10, `adapters/README.md`, `docs/migration_guides.md` |
+| **Phase 8** | Resilience tooling (capsules, ledger replay/anchor, offline sync, chaos playbooks) | README §2.11, `docs/resilience_playbooks.md`, `scripts/ledger_replay.py`, `scripts/offline_sync.py` |
+| **White Paper** | Full narrative across Phases 1–8 | `docs/whitepaper.md` |
 
 ### 2.1.1 Shared Postgres (multi-node)
 If you want multiple VOIKE nodes (Mac + Linux, edge + core) to share the same control-plane database, run the helper script on every machine before starting Docker:
@@ -95,6 +108,69 @@ Returns:
 { "sessionId": "...", "reply": "...", "policy": "summaries", "answers": [...] }
 ```
 Follow-up messages include `sessionId` to keep context. VOIKE stores the transcript and actions.
+
+### 2.6 Phase 1 – Genesis / Control-Plane Bootstrap
+Run this once on the canonical node (e.g., `voike.supremeuf.com`) to seed the control-plane Postgres with the authoritative DNS + resolver metadata. Every future `docker compose up -d --build` will then read the state via `GENESIS_BOOTSTRAP=1`.
+
+```bash
+# assumes GENESIS_ADMIN_TOKEN/VOIKE_ADMIN_TOKEN is set
+node scripts/genesis_seed.js \
+  --core-url https://voike.supremeuf.com \
+  --zones config/vdns-zones.json \
+  --endpoints config/snrl-endpoints.json
+```
+
+After seeding, smoke-test the control plane:
+
+```bash
+curl -H "x-voike-admin-token: $GENESIS_ADMIN_TOKEN" https://voike.supremeuf.com/vdns/zones
+curl -H "x-voike-admin-token: $GENESIS_ADMIN_TOKEN" https://voike.supremeuf.com/snrl/endpoints
+curl -H "x-voike-api-key: <PROJECT_KEY>" -d '{ "domain": "api.voike.com" }' \
+  https://voike.supremeuf.com/snrl/resolve
+```
+
+Nodes brought up with `GENESIS_BOOTSTRAP=1` now fetch the seeded zone/endpoints automatically before serving traffic.
+
+### 2.7 Phase 4 – Auto-Bootstrap + Auto-Registration (one command forever)
+After Phase 1 is complete, every additional VOIKE node (backend + POP stack) can be launched and registered with a single command:
+
+```bash
+docker compose up -d --build
+```
+
+The backend automatically hydrates from Genesis (`GENESIS_BOOTSTRAP=1`), advertises itself back (`GENESIS_REGISTER=1`), and the POP containers begin serving DoH/UDP/TCP immediately. See `docs/phase4_auto-bootstrap.md` for verification tips and environment overrides.
+
+### 2.8 Phase 5 – Agentic Self-Evolution + CI/CD
+
+- `flows/voike-self-evolve.flow` now encodes the full Planner → Codegen → Tester → Infra → Product loop. Use it to turn any Markdown spec into orchestrator steps.
+- Agents run through `EvolutionAgentService`, so every `RUN AGENT` call creates/updates `/orchestrator/tasks` records automatically (no stub handlers). The Planner reads `docs/phase5_agents.md` by default; pass `featureSpecOverride` to stream inline specs from CI.
+- `.github/workflows/agentic-flow.yml` invokes `/flow/plan` + `/flow/execute` using the Playground API. Configure `VOIKE_API_URL`, `VOIKE_API_KEY`, and `VOIKE_PROJECT_ID` secrets and the workflow prints the Product agent summary on every push/PR.
+- Tester parses changed `.flow` files through the FLOW compiler and ensures referenced files exist; Infra emits deployment/capsule commands so demos stay reproducible with a single `docker compose up -d --build`.
+- See `docs/phase5_agents.md` for the spec template, curl examples, and Playground tips.
+
+### 2.9 Phase 6 – Deployment Tooling & CI/CD (Playground or DIY)
+
+- Two dedicated deployment guides (`docs/deployment_docker.md`, `docs/deployment_baremetal.md`) walk through Compose/Helm clusters or bare-metal installs—choose to “run VOIKE with us” (connect to the Playground) or “run VOIKE yourself” and auto-join the decentralized network.
+- `.env.example` now lists every `VOIKE_NODE_*`, Genesis, POP, and SNRL variable required for automatic bootstrap/registration so plug-and-play nodes start with zero guesswork.
+- Reference templates live in `deploy/compose/voike-playground.compose.yml` and `deploy/helm/voike/` (Deployment + Service + values). Drop them into Docker or Kubernetes to spin up FLOW/VASM/VVM stacks quickly.
+- Helper scripts (`scripts/make_capsule_snapshot.py`, `scripts/export_ledger.py`, `scripts/verify_pop.py`) handle capsule snapshots, ledger exports, and POP verification from laptops or CI.
+- Additional GitHub Actions (`flow-tests.yml`, `snapshot-ci.yml`) show how to run FLOW plan checks and Capsule snapshots directly against the Playground API. Copy them to keep your own repos in lockstep.
+
+> Every deployment story (cloud, bare metal, NAT, tunnels) still reduces to **copy `.env` → `docker compose up -d --build`**. The defaults in `.env.example` make new nodes hydrate from Genesis and self-register, so you never run extra bootstrap commands.
+
+### 2.10 Phase 7 – Multi-Platform Adapters (Firebase/Supabase, Flask, React, Rust, Postgres)
+
+- New adapter templates live under `adapters/` with dedicated READMEs/code for Firebase/Supabase, Flask, React, Rust, and Postgres.
+- Each adapter demonstrates dual-write, shadow mode, and failover logic (including VDNS/SNRL lookup) so you can reroute existing apps through VOIKE without downtime.
+- `docs/migration_guides.md` explains how to roll out dual-write → shadow → failover phases across stacks, referencing the provided adapters.
+- Templates include fallback caching (React hook + Flask blueprint), worker patterns (Rust), and SQL triggers (Postgres) so “run VOIKE with us” or “run VOIKE yourself” is one copy/paste away.
+
+### 2.11 Phase 8 – Resilience Tooling & Offline Ops
+
+- New ledger replay + anchoring APIs (`POST /ledger/replay`, `POST /ledger/anchor`) drive snapshots, audits, and rollback loops.
+- CLI helpers (`scripts/ledger_replay.py`, `scripts/offline_sync.py`) replay append-only ledgers, sync caches offline, and pair with `docs/resilience_playbooks.md` for full outage playbooks.
+- Capsule snapshot tooling + `snapshot-ci.yml` keep reproducible artifacts handy; chaos guidance (Phase 8 doc) shows how to simulate DNS/cloud outages and verify POP health afterward.
+- README + docs cover rollback/replay + offline instructions so ops teams can run VOIKE completely disconnected when needed.
 
 ---
 
@@ -184,10 +260,12 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 ### Key concepts
 - **FLOW opcodes** cover semantic actions (`LOAD CSV`, `FILTER`, `GROUP`, `RUN_JOB`, `RUN_AGENT`). Ops are versioned (`OP@MAJOR.MINOR`) so plans stay stable.
 - **Meta orchestration ops** (`APX_EXEC`, `BUILD_VPKG`, `DEPLOY_SERVICE`, `OUTPUT_TEXT`) are available inside FLOW so the same plan can describe repo bootstrap, packaging, and deployment directly through VOIKE.
+- **Agentic orchestration** – `EvolutionAgentService` powers the `planner`, `codegen`, `tester`, `infra`, and `product` agents used by `flows/voike-self-evolve.flow`. Each call logs to `/orchestrator/tasks` automatically and optionally uses GPT when `OPENAI_API_KEY` is provided.
 - **VVM descriptors** wrap external runtimes (Python, C++, TF Serving, etc.) with env requirements and IO schemas.
 - **Agents** contribute FLOW by calling APIX (`flow.parse/plan/execute`, `agent.*` ops) and logging to `/orchestrator/tasks`.
 - **Capsules** snapshot FLOW + plans + artifacts for reproducibility.
 - `flows/voike-regression.flow` is a codified version of the full regression run: it ingests sample data, runs hybrid queries, dispatches a grid Fibonacci job, builds VPKGs, deploys services, and captures a capsule so you can replay the entire smoke test through VOIKE itself.
+- The `APX_EXEC "source.readFile"` target reads specs from the repo root and falls back to inline text (`featureSpecOverride`) so CI/CD jobs can stream specs without mounting the filesystem.
 
 ### Goals
 - **Universal**: any language/framework becomes a FLOW plan + VPKG deployment.
@@ -213,6 +291,13 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - `voike app onboard --project <id> --source-type repo --identifier <giturl>` – reads `flows/onboard-foreign-app.flow`, plans it, executes it, and prints the onboarding summary.
 - `python scripts/grid.py --mode split --n 10000 --show-segments` – submits a split Fibonacci job to the grid scheduler, spawns child jobs across nodes, and prints which node processed each segment (great for validating mesh/parallel compute).
 - `python scripts/voike_regression.py --grid-fib 2000` – end-to-end regression harness that now includes a grid Fibonacci job (the script can be wrapped into a VPKG via `voike wrap scripts/voike_regression.py` and launched like any other workload).
+- `python scripts/make_capsule_snapshot.py --memo "Nightly" ...` – capture Capsule snapshots (invoked by the snapshot CI workflow).
+- `python scripts/export_ledger.py --output ledger.json ...` – export Truth Ledger entries for audits/backups.
+- `python scripts/verify_pop.py --domain api.voike.com ...` – confirm POP/SNRL/VDNS health anywhere you have cURL access.
+- `python scripts/ledger_replay.py --since "..."`
+  – replay append-only ledger entries locally and verify virtual energy changes before rollbacks.
+- `python scripts/offline_sync.py --interval 0 --capsules`
+  – prefetch ledger/capsule data into a local cache so apps keep running when cloud dependencies go dark.
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 
 ## 6.1 SNRL + V-DNS (Phase 1 foundation)
@@ -262,6 +347,27 @@ curl -s http://localhost:8080/vdns/zones/voike-com/export \
 ```
 
 Use the exported zone file to feed Knot/NSD authoritative servers in the SNRL POPs. Combined with `/snrl/resolve`, VOIKE now controls both semantic resolution and the authoritative DNS zone state.
+
+## 6.3 Phase 3 POP deployment (DoH/DoT + Authoritative DNS)
+
+Phase 3 turns the control-plane pieces above into runnable resolver POPs so you can decommission Cloudflare and serve `voike.supremeuf.com` directly from VOIKE-managed infrastructure.
+
+1. **SNRL POP** – `services/snrl-pop` is a Fastify + DNS stack that terminates DoH (`/dns-query`), UDP/TCP port 53, and optional DoT (port 853). It proxies requests to `/snrl/resolve`, caches responses, and emits TXT/SRV metadata with SNRL signatures. Configure it via:
+   - `SNRL_API_KEY` – VOIKE project API key with access to `/snrl/resolve`.
+   - `SNRL_POP_REGION` / `SNRL_POP_CAPABILITIES` – advertised metadata for semantic routing.
+   - Optional `SNRL_DOT_CERT_PATH` + `SNRL_DOT_KEY_PATH` if you want TLS-based DoT in addition to DoH.
+   - Spin it up locally with `docker compose up snrl-pop` (ports: DoH `8053`, UDP/TCP `1053`, DoT `8853` by default).
+2. **VDNS primaries/secondaries** – `services/vdns-primary` (Knot) and `services/vdns-secondary` (NSD) fetch exported zone text from `/vdns/zones/:id/export` using `VOIKE_ADMIN_TOKEN` and serve it authoritatively on port 53. Each container only needs `VDNS_ZONE_ID` + `VDNS_ZONE_DOMAIN` (defaults provided in `.env.example`). Launch them with `docker compose up vdns-primary vdns-secondary` to get primary (port `2053`) and secondary (port `3053`) name servers.
+3. **POP rollout workflow** – documented in `docs/phase3_pop.md`: run `scripts/set_shared_db.js` to ensure every node shares control-plane Postgres, start the POP containers on Mac/Linux nodes, verify DoH responses (`curl -H 'accept: application/dns-message' --data-binary @query.bin http://localhost:8053/dns-query`) and DNS answers (`dig @127.0.0.1 -p 1053 voike.supremeuf.com`). Once healthy, update registrar glue/NS records to your POP IPs, wait for TTL expiry, then disable Cloudflare.
+
+These services now live inside the repo so AI agents or ops engineers can build/publish POP images directly from VOIKE. Future enhancements (DNSSEC, Anycast/BGP automation, POP health probes) stack on top of this baseline without retooling.
+
+## 6.4 Phase 4 (Genesis bootstrap + auto-registration)
+
+- `GENESIS_BOOTSTRAP=1` — when enabled, the backend synchronizes `config/vdns-zones.json` and `config/snrl-endpoints.json` from the canonical Genesis deployment (`GENESIS_URL` + `GENESIS_ADMIN_TOKEN`) before services initialize, ensuring each node starts with the latest POP + DNS state.
+- `GENESIS_REGISTER=1` — after boot, VOIKE auto-registers the node (SNRL endpoint + A/AAAA/NS records) with Genesis using `VOIKE_PUBLIC_*` envs (hostname, IP, region, capabilities, TTLs). Every `docker compose up -d --build` run now self-registers the host with `voike.supremeuf.com` so discovery never needs manual steps.
+- VDNS containers poll `/vdns/zones/:id/export` on an interval (`VDNS_REFRESH_SECONDS`, default 60s) and hot-reload Knot/NSD whenever the zone changes. No manual restarts are required when `/vdns/records` updates fire from Genesis.
+- Compose wiring ships all required env defaults (`GENESIS_*`, `VOIKE_PUBLIC_*`, `SNRL_*`, `VDNS_*`), so bringing up a fresh server only requires editing `.env` and running `docker compose up -d --build`. The backend, resolvers, POPs, and registration loop are all included.
 
 ### LLM configuration
 - Set `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com`), and `OPENAI_MODEL` (`gpt-5.1` by default) in `.env` to enable real GPT-backed flows (`/agents/fast-answer`, `flows/*` with `RUN AGENT`).
@@ -319,6 +425,13 @@ VOIKE is starting to run itself. The orchestrator now persists a full project gr
 - `flows/fast-agentic-answer.flow` pairs with `/agents/fast-answer` / `voike agent answer` to demonstrate the multi-agent planner → reasoning → facts → code → critique → stitch loop (all steps logged in `/orchestrator/tasks`).
 - `flows/onboard-foreign-app.flow` encodes the Lovable/Replit/Supabase import pipeline; run it via `voike app onboard` (which uses `/flow/plan` + `/flow/execute`) and watch `/orchestrator/tasks` capture each migration step.
 - `flows/voike-meta.flow` describes bootstrapping VOIKE itself (DB/kernels/VASM/envs/VVMs/peacock/etc.), while `flows/voike-self-evolve.flow` captures how Planner/Codegen/Tester/Infra/Product agents evolve VOIKE end-to-end.
+
+Phase 5 wires those RUN_AGENT calls to the new `EvolutionAgentService`. Planner/Codegen/Tester/Infra/Product agents automatically:
+
+- Ensure an orchestrator project exists (re-using the VOIKE project UUID).
+- Create/update `/orchestrator/tasks` and append structured steps with summaries, diffs, and deployment commands.
+- Parse FLOW specs (`source.readFile` supports inline overrides) so CI/CD jobs can replay the exact feature brief used locally.
+- Feed the `.github/workflows/agentic-flow.yml` pipeline, which exercises Playground `/flow/plan` + `/flow/execute` and prints the Product summary during every push/PR when secrets are configured.
 
 Upcoming phases will attach Capsules to each task, wire CLI helpers (`voike task`, `voike evolve`), and let FLOW drive the entire evolution loop.
 

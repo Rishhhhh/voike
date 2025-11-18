@@ -15,7 +15,7 @@ import { VDBClient, VDBQuery } from '@vdb/index';
 import { UniversalIngestionEngine } from '@uie/index';
 import { correctQuery } from '@semantic/varvqcqc';
 import { runVASVEL } from '@semantic/vasvel';
-import { getLedgerEntries, getLedgerEntry, getVirtualEnergy } from '@ledger/index';
+import { getLedgerEntries, getLedgerEntry, getVirtualEnergy, replayLedger, anchorLedgerEntries } from '@ledger/index';
 import { metrics, telemetryBus, logger } from '@telemetry/index';
 import { ToolRegistry, McpContext } from '@mcp/index';
 import config from '@config';
@@ -41,6 +41,7 @@ import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { AgentOpsService } from '@agents/service';
 import { SnrlController } from '../snrl/controller';
+import { SnrlService } from '../snrl/service';
 import { VdnsService } from '../vdns/service';
 import {
   addWaitlistEntry,
@@ -393,11 +394,39 @@ const vdnsRecordSchema = z.object({
   name: z.string().min(1),
   value: z.string().min(1),
   ttl: z.number().optional(),
+  replace: z.boolean().optional(),
 });
 
 const vdnsRecordRequestSchema = z.object({
   zoneId: z.string().min(1),
   record: vdnsRecordSchema,
+});
+
+const vdnsZoneSchema = z.object({
+  id: z.string().min(1),
+  zone: z.string().min(1),
+  serial: z.number(),
+  ttl: z.number(),
+  primaryNs: z.string().min(1),
+  admin: z.string().min(1),
+  records: z.array(vdnsRecordSchema.omit({ replace: true })),
+});
+
+const snrlEndpointSchema = z.object({
+  id: z.string().min(1),
+  host: z.string().min(1),
+  ip: z.string().min(1),
+  port: z.number(),
+  region: z.string().min(1),
+  weight: z.number(),
+  capacityScore: z.number(),
+  latencyBaselineMs: z.number(),
+  capabilities: z.array(z.string()).min(1),
+  patterns: z.array(z.string()).min(1),
+});
+
+const idParamSchema = z.object({
+  id: z.string().min(1),
 });
 
 const waitlistSchema = z.object({
@@ -556,6 +585,7 @@ const envDescriptorSchema = z.object({
 });
 
 const orchestratorProjectSchema = z.object({
+  projectId: z.string().uuid().optional(),
   name: z.string().min(1),
   type: z.enum(['core', 'app', 'library']).optional(),
   repo: z.string().optional(),
@@ -608,6 +638,15 @@ const orchestratorTaskSchema = z.object({
   priority: z.enum(['low', 'medium', 'high']).optional(),
   metadata: z.record(z.any()).optional(),
 });
+
+const ledgerReplaySchema = z.object({
+  since: z.string().optional(),
+  until: z.string().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+  entryIds: z.array(z.string().uuid()).optional(),
+});
+
+const ledgerAnchorSchema = ledgerReplaySchema.extend({});
 
 const toPublicUser = (user: UserRecord) => ({
   id: user.id,
@@ -759,6 +798,7 @@ export type ApiDeps = {
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
   vdns: VdnsService;
+  snrlService: SnrlService;
 };
 
 export const buildServer = ({
@@ -789,6 +829,7 @@ export const buildServer = ({
   orchestrator,
   agentOps,
   snrl,
+  snrlService,
   vdns,
 }: ApiDeps & {
   blobgrid: BlobGridService;
@@ -813,6 +854,7 @@ export const buildServer = ({
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
   snrl: SnrlController;
+  snrlService: SnrlService;
   vdns: VdnsService;
 }): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
@@ -1376,6 +1418,26 @@ export const buildServer = ({
     return entry;
   });
 
+  app.post('/ledger/replay', { preHandler: requireApiKey }, async (request, reply) => {
+    try {
+      const body = ledgerReplaySchema.parse(request.body || {});
+      return replayLedger(pool, request.project!.id, body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/ledger/anchor', { preHandler: requireApiKey }, async (request, reply) => {
+    try {
+      const body = ledgerAnchorSchema.parse(request.body || {});
+      return anchorLedgerEntries(pool, request.project!.id, body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
   app.get('/mcp/tools', { preHandler: requireApiKey }, async () => tools.list());
   app.post('/mcp/execute', { preHandler: requireApiKey }, async (request) => {
     const body = request.body as { name: string; input: unknown; context?: Partial<McpContext> };
@@ -1590,6 +1652,10 @@ export const buildServer = ({
     const datasetId = await playground.createDataset(request.project!.id, body);
     return { datasetId };
   });
+
+  app.get('/capsules', { preHandler: requireApiKey }, async (request) =>
+    capsules.listCapsules(request.project!.id),
+  );
 
   app.post('/capsules', { preHandler: requireApiKey }, async (request) => {
     const body = request.body as { manifest: CapsuleManifest; description?: string; labels?: string[] };
@@ -1987,6 +2053,35 @@ export const buildServer = ({
     try {
       const body = snrlResolveSchema.parse(request.body || {});
       return await snrl.resolve(body.domain, body.client);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+  app.get('/snrl/endpoints', { preHandler: requireAdmin }, async () => snrlService.listEndpoints());
+  app.post('/snrl/endpoints', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const body = snrlEndpointSchema.parse(request.body || {});
+      return snrlService.upsertEndpoint(body);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+  app.delete('/snrl/endpoints/:id', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const params = idParamSchema.parse(request.params || {});
+      return snrlService.removeEndpoint(params.id);
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/vdns/zones', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const zone = vdnsZoneSchema.parse(request.body || {});
+      return vdns.upsertZone(zone);
     } catch (err) {
       reply.code(400);
       return { error: (err as Error).message };

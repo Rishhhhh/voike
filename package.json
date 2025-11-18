@@ -11,7 +11,8 @@
     "regression": "ts-node -r tsconfig-paths/register scripts/regression.ts",
     "lint": "tsc --noEmit",
     "seed": "ts-node -r tsconfig-paths/register src/scripts/seed.ts",
-    "heartbeat": "python scripts/voike_heartbeat.py"
+    "heartbeat": "python scripts/voike_heartbeat.py",
+    "genesis": "node scripts/genesis_seed.js"
   },
   "engines": {
     "node": ">=18"

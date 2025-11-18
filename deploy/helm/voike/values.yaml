@@ -1,0 +1,39 @@
+image:
+  repository: voike-x
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: LoadBalancer
+  annotations: {}
+
+env:
+  PORT: "8080"
+  DATABASE_URL: "postgres://postgres:postgres@postgres:5432/voikex"
+  GENESIS_BOOTSTRAP: "1"
+  GENESIS_REGISTER: "1"
+  VOIKE_NODE_MODE: "baremetal"
+  VOIKE_NODE_ID: "voike-k8s-node"
+  VOIKE_NODE_ROLE: "core"
+  VOIKE_NODE_ROLES: "core,pop"
+  VOIKE_NODE_REGION: "k8s-region"
+  VOIKE_NODE_ZONE: "k8s-zone-a"
+  VOIKE_PUBLIC_HOSTNAME: "voike.example.com"
+  VOIKE_PUBLIC_IP: "10.0.0.10"
+  VOIKE_PUBLIC_PORT: "443"
+  VOIKE_PUBLIC_CAPABILITIES: "http,gpu"
+  VOIKE_PUBLIC_TTL: "60"
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

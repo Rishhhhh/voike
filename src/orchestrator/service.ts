@@ -154,9 +154,9 @@ export class OrchestratorService {
     );
   }
 
-  async registerProject(input: { name: string; type?: string; repo?: string; mainVpkgId?: string }): Promise<OrchestratorProject> {
+  async registerProject(input: { projectId?: string; name: string; type?: string; repo?: string; mainVpkgId?: string }): Promise<OrchestratorProject> {
     if (!input.name) throw new Error('Project name required');
-    const projectId = crypto.randomUUID();
+    const projectId = input.projectId || crypto.randomUUID();
     const { rows } = await this.pool.query(
       `
       INSERT INTO orchestrator_projects (project_id, name, type, repo, main_vpkg_id)

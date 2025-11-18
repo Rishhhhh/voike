@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: voike-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voikex
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - voike-net
+
+  voike:
+    build:
+      context: ../../
+    container_name: voike-core
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/voikex
+      VOIKE_NODE_MODE: ${VOIKE_NODE_MODE:-docker}
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"   # Core + Playground
+      - "8053:8053"   # DoH
+      - "1053:1053"   # TCP DNS
+      - "1053:1053/udp"
+      - "8853:8853"   # DoT
+    networks:
+      - voike-net
+    volumes:
+      - ../../.voike-node-identity.json:/app/.voike-node-identity.json
+
+networks:
+  voike-net:
+    driver: bridge
+
+volumes:
+  pgdata:

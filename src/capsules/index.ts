@@ -41,6 +41,14 @@ export class CapsuleService {
     return rows[0] || null;
   }
 
+  async listCapsules(projectId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM capsules WHERE project_id = $1 ORDER BY created_at DESC LIMIT 100`,
+      [projectId],
+    );
+    return rows;
+  }
+
   async restoreCapsule(capsuleId: string) {
     const capsule = await this.getCapsule(capsuleId);
     if (!capsule) {

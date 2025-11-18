@@ -13,6 +13,8 @@ COPY --from=base /app/tsconfig*.json ./
 COPY --from=base /app/node_modules ./node_modules
 COPY --from=base /app/dist ./dist
 COPY --from=base /app/docs ./docs
+COPY --from=base /app/config ./config
+COPY --from=base /app/flows ./flows
 COPY scripts/docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 ENTRYPOINT ["./docker-entrypoint.sh"]

@@ -3,11 +3,12 @@ FLOW "VOIKE SELF EVOLVE"
 INPUTS
   text projectId
   text featureSpecPath
+  text featureSpecOverride
 END INPUTS
 
 STEP read_spec =
   APX_EXEC "source.readFile"
-    WITH { "projectId": projectId, "path": featureSpecPath }
+    WITH { "projectId": projectId, "path": featureSpecPath, "fallback": featureSpecOverride }
 
 STEP plan =
   RUN AGENT "planner" WITH projectId = projectId, spec = read_spec.content
