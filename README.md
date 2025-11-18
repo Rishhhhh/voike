@@ -202,6 +202,7 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - `voike peacock build/launch/evolve` – helper commands for the Peacock builder (packages the `peacock/` VPKG, launches it via `/vpkgs/launch`, and invokes FLOW plans for website generation).
 - `voike agent answer --question "..."` – hits `/agents/fast-answer` to demonstrate the fast multi-agent FLOW pipeline.
 - `voike app onboard --project <id> --source-type repo --identifier <giturl>` – reads `flows/onboard-foreign-app.flow`, plans it, executes it, and prints the onboarding summary.
+- `python scripts/grid.py --mode split --n 10000 --show-segments` – submits a split Fibonacci job to the grid scheduler, spawns child jobs across nodes, and prints which node processed each segment (great for validating mesh/parallel compute).
 - `python scripts/voike_regression.py --grid-fib 2000` – end-to-end regression harness that now includes a grid Fibonacci job (the script can be wrapped into a VPKG via `voike wrap scripts/voike_regression.py` and launched like any other workload).
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 

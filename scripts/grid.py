@@ -32,14 +32,20 @@ def request(method: str, path: str, json: Optional[Dict[str, Any]] = None):
     return resp.json()
 
 
-def submit_fib_job(n: int) -> str:
-    payload = {
-        "type": "custom",
-        "params": {"task": "fib", "n": n},
-    }
+def submit_fib_job(n: int, mode: str, chunk_size: int) -> str:
+    if mode == "split":
+        payload = {
+            "type": "custom",
+            "params": {"task": "fib_split", "n": n, "chunkSize": chunk_size},
+        }
+    else:
+        payload = {
+            "type": "custom",
+            "params": {"task": "fib", "n": n},
+        }
     response = request("POST", "/grid/jobs", json=payload)
     job_id = response["jobId"]
-    print(f"[grid] submitted jobId={job_id} (n={n})")
+    print(f"[grid] submitted jobId={job_id} (mode={mode}, n={n})")
     return job_id
 
 
@@ -65,16 +71,43 @@ def fibonacci_local(n: int) -> str:
 def main():
     parser = argparse.ArgumentParser(description="VOIKE grid fib tester")
     parser.add_argument("--n", type=int, default=2000, help="Fibonacci index to compute")
+    parser.add_argument(
+        "--mode",
+        choices=["single", "split"],
+        default="split",
+        help="Use single job or split job that maps to multiple nodes.",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=500,
+        help="Chunk size for split mode (number of Fibonacci steps per segment).",
+    )
+    parser.add_argument(
+        "--show-segments",
+        action="store_true",
+        help="Fetch each segment job and print the assigned node.",
+    )
     args = parser.parse_args()
 
     if not API_KEY:
         print("VOIKE_API_KEY must be set", file=sys.stderr)
         sys.exit(1)
 
-    job_id = submit_fib_job(args.n)
+    job_id = submit_fib_job(args.n, args.mode, args.chunk_size)
     job = wait_for_job(job_id)
-    result = (job.get("result") or {}).get("fib")
-    print(f"[grid] final status={job.get('status')} fib={result}")
+    result_payload = job.get("result") or {}
+    result = result_payload.get("fib")
+    print(f"[grid] final status={job.get('status')} fib={result} assignedNode={job.get('assigned_node_id')}")
+    segments = result_payload.get("segments") or []
+    if segments:
+        print(f"[grid] job spawned {len(segments)} segment jobs")
+        if args.show_segments:
+            for seg_id in segments:
+                seg_job = request("GET", f"/grid/jobs/{seg_id}")
+                print(
+                    f"   segment {seg_id[:8]} status={seg_job.get('status')} node={seg_job.get('assigned_node_id')}"
+                )
     local = fibonacci_local(args.n)
     if result is None:
         print("[grid] remote job did not return fib result (server missing handler?)")

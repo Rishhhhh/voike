@@ -108,15 +108,15 @@ The backend injects `projectId` automatically so logging/ledger entries remain s
 - `POST /grid/jobs` – submit jobs (`llm.infer`, `media.transcode`, `query.analytics`, custom). VOIKE schedules them across nodes maximizing IRX = (Utility × Locality × Resilience) / (Cost × Energy). Include `preferLocalEdge` or `preferVillage` flags to bias toward edge/village nodes.
 - `GET /grid/jobs/{jobId}` – status, logs, result references.
 
-Example Fibonacci job (used by `scripts/voike_regression.py --grid-fib`):
+Example Fibonacci jobs (used by `scripts/grid.py` & `flows/voike-grid.flow`):
 ```json
 POST /grid/jobs
-{
-  "type": "custom",
-  "params": { "task": "fib", "n": 2000 }
-}
+{ "type": "custom", "params": { "task": "fib", "n": 2000 } }
+
+POST /grid/jobs
+{ "type": "custom", "params": { "task": "fib_split", "n": 10000, "chunkSize": 500 } }
 ```
-Scheduler nodes compute `fib(n)` using BigInt arithmetic and persist the result to `grid_jobs.result.fib`.
+The second payload spawns child jobs for each chunk, allowing different nodes to compute partial matrices; the parent job stitches results and returns `result.fib` plus a `segments` array of child job IDs so you can audit which node processed each slice.
 
 ### 2.10 Playground APIs
 - `POST /playground/sessions` – bootstrap a dev sandbox tied to your project.

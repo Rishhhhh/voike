@@ -107,28 +107,66 @@ const bootstrap = async () => {
     : undefined;
   const agentOps = new AgentOpsService(orchestrator, { llm: gptClient });
   const onboard = new OnboardService(orchestrator);
-  const flow = new FlowService((agent, payload, ctx) => {
-    if (['planner', 'reasoning', 'facts', 'code', 'critique', 'stitcher'].includes(agent)) {
-      return handleFastAgent(agentOps, agent, ctx.projectId, payload);
-    }
-    if (
-      [
-        'source.fetchProject',
-        'db.introspect',
-        'db.migrationPlanner',
-        'db.migrateToVoike',
-        'vvm.autogenFromProject',
-        'vpkgs.createFromProject',
-        'apps.launch',
-        'agent.onboardExplainer',
-      ].includes(agent)
-    ) {
-      if (!ctx.projectId || !ctx.runId) {
-        throw new Error('Flow context missing projectId/runId');
+  const flow = new FlowService({
+    agentHandler: (agent, payload, ctx) => {
+      if (['planner', 'reasoning', 'facts', 'code', 'critique', 'stitcher'].includes(agent)) {
+        return handleFastAgent(agentOps, agent, ctx.projectId, payload);
       }
-      return onboard.handle(agent, payload, { projectId: ctx.projectId, runId: ctx.runId });
-    }
-    return undefined;
+      if (
+        [
+          'source.fetchProject',
+          'db.introspect',
+          'db.migrationPlanner',
+          'db.migrateToVoike',
+          'vvm.autogenFromProject',
+          'vpkgs.createFromProject',
+          'apps.launch',
+          'agent.onboardExplainer',
+        ].includes(agent)
+      ) {
+        if (!ctx.projectId || !ctx.runId) {
+          throw new Error('Flow context missing projectId/runId');
+        }
+        return onboard.handle(agent, payload, { projectId: ctx.projectId, runId: ctx.runId });
+      }
+      return undefined;
+    },
+    apxExecutor: async (target, payload, ctx) => {
+      if (!ctx.projectId) {
+        throw new Error('FLOW APX execution requires projectId');
+      }
+      switch (target) {
+        case 'grid.submitJob': {
+          const jobId = await grid.submitJob({
+            projectId: ctx.projectId,
+            type: payload?.jobType || payload?.type || 'custom',
+            params: payload?.payload || payload?.params || {},
+            inputRefs: payload?.inputRefs || {},
+          });
+          return { jobId };
+        }
+        case 'grid.awaitJob': {
+          if (!payload?.jobId) {
+            throw new Error('grid.awaitJob requires jobId');
+          }
+          const job = await grid.waitForJob(String(payload.jobId), {
+            intervalMs: payload?.intervalMs,
+            timeoutMs: payload?.timeoutMs,
+          });
+          if (job.project_id !== ctx.projectId) {
+            throw new Error('Grid job does not belong to this project');
+          }
+          return {
+            jobId: job.job_id,
+            status: job.status,
+            result: job.result,
+            assignedNodeId: job.assigned_node_id,
+          };
+        }
+        default:
+          throw new Error(`Unknown APX_EXEC target ${target}`);
+      }
+    },
   });
   const vpkg = new VpkgService();
   const captureKnowledge = async (node: {

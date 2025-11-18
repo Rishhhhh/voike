@@ -5,6 +5,66 @@ import { VDBClient } from '@vdb/index';
 import { VvmService } from '@vvm/index';
 import { logger, telemetryBus } from '@telemetry/index';
 
+type FibMatrix = [
+  [bigint, bigint],
+  [bigint, bigint],
+];
+
+const BASE_MATRIX: FibMatrix = [
+  [1n, 1n],
+  [1n, 0n],
+];
+
+function identityMatrix(): FibMatrix {
+  return [
+    [1n, 0n],
+    [0n, 1n],
+  ];
+}
+
+function multiplyMatrices(a: FibMatrix, b: FibMatrix): FibMatrix {
+  return [
+    [a[0][0] * b[0][0] + a[0][1] * b[1][0], a[0][0] * b[0][1] + a[0][1] * b[1][1]],
+    [a[1][0] * b[0][0] + a[1][1] * b[1][0], a[1][0] * b[0][1] + a[1][1] * b[1][1]],
+  ];
+}
+
+function matrixPower(power: number): FibMatrix {
+  let result = identityMatrix();
+  let base = BASE_MATRIX;
+  let exponent = Math.max(0, Math.floor(power));
+  while (exponent > 0) {
+    if (exponent % 2 === 1) {
+      result = multiplyMatrices(result, base);
+    }
+    base = multiplyMatrices(base, base);
+    exponent = Math.floor(exponent / 2);
+  }
+  return result;
+}
+
+function serializeMatrix(matrix: FibMatrix) {
+  return matrix.map((row) => row.map((cell) => cell.toString()));
+}
+
+function parseMatrix(payload: any): FibMatrix {
+  if (!Array.isArray(payload) || payload.length !== 2) {
+    throw new Error('Invalid matrix payload');
+  }
+  return [
+    [BigInt(payload[0][0]), BigInt(payload[0][1])],
+    [BigInt(payload[1][0]), BigInt(payload[1][1])],
+  ];
+}
+
+function fibFromMatrix(matrix: FibMatrix) {
+  return matrix[1][0];
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export type GridJobType = 'llm.infer' | 'media.transcode' | 'query.analytics' | 'custom';
 
 export type GridJobPayload = {
@@ -61,6 +121,25 @@ export class GridService {
   async getJob(jobId: string) {
     const { rows } = await this.pool.query(`SELECT * FROM grid_jobs WHERE job_id = $1`, [jobId]);
     return rows[0] || null;
+  }
+
+  async waitForJob(jobId: string, options?: { intervalMs?: number; timeoutMs?: number }) {
+    const intervalMs = options?.intervalMs ?? 500;
+    const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000;
+    const start = Date.now();
+    while (true) {
+      const job = await this.getJob(jobId);
+      if (!job) {
+        throw new Error(`Grid job ${jobId} not found`);
+      }
+      if (job.status === 'SUCCEEDED' || job.status === 'FAILED') {
+        return job;
+      }
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(`Timed out waiting for grid job ${jobId}`);
+      }
+      await sleep(intervalMs);
+    }
   }
 
   startScheduler() {
@@ -156,22 +235,85 @@ export class GridService {
 
   private async runCustomJob(job: any) {
     const task = job.params?.task;
-    if (task === 'fib') {
-      const n = Number(job.params?.n ?? 0);
-      return { fib: this.computeFib(Math.max(0, Math.floor(n))) };
+    switch (task) {
+      case 'fib': {
+        const n = Number(job.params?.n ?? 0);
+        return { fib: this.computeFibValue(Math.max(0, Math.floor(n))).toString() };
+      }
+      case 'fib_matrix': {
+        const power = Number(job.params?.power ?? 0);
+        const matrix = matrixPower(Math.max(0, Math.floor(power)));
+        return { matrix: serializeMatrix(matrix) };
+      }
+      case 'fib_split':
+        return this.runFibSplitJob(job);
+      default:
+        return { echo: job.params };
     }
-    return { echo: job.params };
   }
 
-  private computeFib(n: number) {
-    let a = 0n;
-    let b = 1n;
-    for (let i = 0; i < n; i += 1) {
-      const next = a + b;
-      a = b;
-      b = next;
+  private async runFibSplitJob(job: any) {
+    const n = Math.max(0, Number(job.params?.n ?? 0));
+    const chunkSize = Math.max(1, Number(job.params?.chunkSize ?? 500));
+    if (n === 0) {
+      return { fib: '0', segments: [] };
     }
-    return a.toString();
+    const chunkJobs: string[] = [];
+    let remaining = n;
+    while (remaining > 0) {
+      const chunk = Math.min(chunkSize, remaining);
+      remaining -= chunk;
+      const childId = await this.submitJob({
+        projectId: job.project_id,
+        type: 'custom',
+        params: {
+          task: 'fib_matrix',
+          power: chunk,
+        },
+      });
+      chunkJobs.push(childId);
+    }
+    const childResults = await Promise.all(chunkJobs.map((childId) => this.waitForJob(childId)));
+    const matrices: FibMatrix[] = [];
+    childResults.forEach((child, idx) => {
+      if (!child) {
+        throw new Error(`Child job ${chunkJobs[idx]} missing`);
+      }
+      if (child.project_id !== job.project_id) {
+        throw new Error(`Child job ${chunkJobs[idx]} project mismatch`);
+      }
+      if (child.status !== 'SUCCEEDED') {
+        throw new Error(`Child job ${chunkJobs[idx]} ${child.status}`);
+      }
+      matrices.push(parseMatrix(child.result?.matrix));
+    });
+    let combined = identityMatrix();
+    for (const matrix of matrices) {
+      combined = multiplyMatrices(combined, matrix);
+    }
+    const fibValue = fibFromMatrix(combined);
+    return {
+      fib: fibValue.toString(),
+      segments: chunkJobs,
+    };
+  }
+
+  private computeFibValue(n: number): bigint {
+    const [fib] = this.fibFastDoubling(n);
+    return fib;
+  }
+
+  private fibFastDoubling(n: number): [bigint, bigint] {
+    if (n === 0) {
+      return [0n, 1n];
+    }
+    const [a, b] = this.fibFastDoubling(Math.floor(n / 2));
+    const c = a * (2n * b - a);
+    const d = a * a + b * b;
+    if (n % 2 === 0) {
+      return [c, d];
+    }
+    return [d, c + d];
   }
 
   private buildLLMResponse(prefix: string, prompt: string, maxTokens: number) {
