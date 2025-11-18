@@ -212,13 +212,14 @@ function buildSegments(question: string, maxSegments: number) {
   }));
 }
 
-function synthesizeAnswer(role: string, segment?: any, inputs?: Record<string, unknown>, question?: string) {
+function synthesizeAnswer(role: string, segment?: any, inputs?: Record<string, unknown>, question?: string): AgentResponse {
   const base = segment?.prompt || question || 'No prompt';
   const answer = `[${role}] ${base} :: ${inputs ? `inputs=${JSON.stringify(inputs)}` : 'standalone'}`;
   return {
     role,
     summary: `Generated ${role} answer`,
     answer,
+    metadata: undefined,
   };
 }
 

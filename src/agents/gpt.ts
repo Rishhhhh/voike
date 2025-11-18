@@ -19,6 +19,15 @@ export type ChatResult = {
   };
 };
 
+type OpenAiChatResponse = {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+};
+
 export class GptClient {
   constructor(private config: OpenAiConfig) {}
 
@@ -43,7 +52,7 @@ export class GptClient {
       const text = await response.text();
       throw new Error(`GPT request failed: ${response.status} ${response.statusText} ${text}`);
     }
-    const data = await response.json();
+    const data = (await response.json()) as OpenAiChatResponse;
     const choice = data.choices?.[0]?.message?.content ?? '';
     const usage = data.usage
       ? {

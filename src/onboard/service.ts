@@ -1,6 +1,9 @@
 import { OrchestratorService } from '@orchestrator/service';
 import { cloneRepository, detectProjectMetadata, introspectPostgres, buildProject } from './utils';
 
+type IntrospectedTable = { name: string; columns: Array<{ name: string; type: string }> };
+type SchemaSnapshot = { tables: IntrospectedTable[]; sampleRows: Array<Record<string, unknown>> };
+
 type OnboardContext = {
   projectId: string;
   runId: string;
@@ -75,7 +78,7 @@ export class OnboardService {
     const state = await this.ensureRunState(context);
     const dbType = String(payload['dbType'] || 'supabase');
     const connection = this.parseConnection(payload['connection']);
-    let schemaResult = { tables: [], sampleRows: [] as Array<Record<string, unknown>> };
+    let schemaResult: SchemaSnapshot = { tables: [], sampleRows: [] };
     if (connection?.connectionString) {
       schemaResult = await introspectPostgres(connection.connectionString);
     }

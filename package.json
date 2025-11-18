@@ -4,7 +4,7 @@
   "description": "VOIKE-X kernel-aware hybrid database backend",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "build": "tsc -p flow/tsconfig.json && tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/index.ts",
     "start": "node -r tsconfig-paths/register dist/index.js",
     "test": "node --localstorage-file=.jest-localstorage ./node_modules/jest/bin/jest.js",

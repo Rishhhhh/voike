@@ -36,7 +36,7 @@ import { FederationService } from '@federation/index';
 import { AiService } from '@ai/index';
 import { ChatService } from '@chat/index';
 import { FlowService } from '../flow/service';
-import { VpkgService } from '@vpkg/service';
+import { VpkgService, type VpkgManifest } from '@vpkg/service';
 import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { AgentOpsService } from '@agents/service';
@@ -235,7 +235,7 @@ const renderFlowPlaygroundPage = () => {
     <section class="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 space-y-4">
       <div class="grid gap-4 md:grid-cols-3">
         <label class="space-y-2 text-sm text-slate-200">
-          <span>API Key (`x-voike-api-key`)</span>
+          <span>API Key (&grave;x-voike-api-key&grave;)</span>
           <input id="apiKey" class="w-full px-4 py-2 rounded-2xl bg-slate-950 border border-slate-800 text-slate-100" placeholder="Paste project API key" type="password" />
         </label>
         <label class="space-y-2 text-sm text-slate-200">
@@ -1955,7 +1955,7 @@ export const buildServer = ({
   app.post('/vpkgs', { preHandler: requireApiKey }, async (request, reply) => {
     const body = vpkgBundleSchema.parse(request.body || {});
     try {
-      const pkg = vpkg.publish(request.project!.id, body.manifest, body.bundle);
+      const pkg = vpkg.publish(request.project!.id, body.manifest as VpkgManifest, body.bundle);
       return { pkgId: pkg.pkgId, createdAt: pkg.createdAt };
     } catch (err) {
       reply.code(400);
@@ -2012,7 +2012,7 @@ export const buildServer = ({
   app.post('/vpkgs/launch', { preHandler: requireApiKey }, async (request, reply) => {
     const body = vpkgBundleSchema.parse(request.body || {});
     try {
-      return vpkg.launchEphemeral(request.project!.id, body.manifest, body.bundle);
+      return vpkg.launchEphemeral(request.project!.id, body.manifest as VpkgManifest, body.bundle);
     } catch (err) {
       reply.code(400);
       return { error: (err as Error).message };

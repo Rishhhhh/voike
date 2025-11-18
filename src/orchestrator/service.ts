@@ -50,7 +50,7 @@ export type OrchestratorTask = {
   priority: 'low' | 'medium' | 'high';
   status: 'queued' | 'planning' | 'executing' | 'blocked' | 'done';
   metadata?: Record<string, unknown>;
-  steps: Array<{ stepId: string; name: string; status: 'pending' | 'in_progress' | 'done'; notes?: string; createdAt: string }>;
+  steps: Array<{ stepId: string; name: string; status: 'pending' | 'in_progress' | 'done'; notes?: string; agentId?: string; output?: Record<string, unknown>; createdAt: string }>;
   createdAt: string;
   updatedAt: string;
 };
@@ -484,7 +484,7 @@ export class OrchestratorService {
       steps,
     };
   }
-}
+
   private simulateAgent(agent: OrchestratorAgent, task: OrchestratorTask, payload?: Record<string, unknown>) {
     const base = payload || {};
     const summary = `[${agent.role}] processed task ${task.taskId.slice(0, 8)} with payload keys ${Object.keys(base).join(', ')}`;
@@ -501,3 +501,4 @@ export class OrchestratorService {
             : [],
     };
   }
+}

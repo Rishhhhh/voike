@@ -289,7 +289,7 @@ function handleFastAgent(agentOps: AgentOpsService, agent: string, projectId: st
     case 'critique':
       return agentOps.runSegment(projectId, agent, payload);
     case 'stitcher':
-      return agentOps.stitch(projectId, payload);
+      return agentOps.stitch(projectId, payload as { question: string; parts: Array<{ id: string; answer: string }>; taskId?: string });
     default:
       return undefined;
   }
