@@ -198,6 +198,34 @@ def run_grid_fibonacci_job(n: int) -> None:
         report("Grid Fibonacci validated", detail=local)
 
 
+def run_grid_split_job(n: int, chunk_size: int = 500) -> None:
+    banner(f"Grid split Fibonacci job n={n} chunk={chunk_size}")
+    payload = {
+        "type": "custom",
+        "params": {"task": "fib_split", "n": n, "chunkSize": chunk_size},
+    }
+    resp = request("POST", "/grid/jobs", json=payload)
+    job_id = resp["jobId"]
+    report("Split job submitted", detail=f"jobId={job_id}")
+    job = wait_for_grid_job(job_id, attempts=240)
+    status = job.get("status")
+    if status != "SUCCEEDED":
+        raise RuntimeError(f"Split job {job_id} ended with status {status}")
+    result = (job.get("result") or {}).get("fib")
+    report("Split job fib result", detail=str(result))
+    local = fibonacci_local(n)
+    if result != local:
+        report("Split job mismatch", status="WARN", detail=f"grid={result} local={local}")
+    segments = (job.get("result") or {}).get("segments") or []
+    report("Split job segments", detail=f"{len(segments)} child jobs")
+    if segments:
+        node_ids = []
+        for seg_id in segments:
+            seg_job = request("GET", f"/grid/jobs/{seg_id}")
+            node_ids.append(seg_job.get("assigned_node_id"))
+        report("Segment nodes", detail=str(node_ids))
+
+
 def mcp_execute(name: str, input_payload: Dict[str, Any]) -> Any:
     body = {
         "name": name,
@@ -909,6 +937,8 @@ def run_regression(args: argparse.Namespace) -> None:
 
     if args.grid_fib:
         run_grid_fibonacci_job(args.grid_fib)
+    if args.grid_split:
+        run_grid_split_job(args.grid_split)
 
     # Security regression: missing API key should 401.
     resp = requests.get(f"{BASE_URL}/kernel/state", timeout=10)
@@ -917,7 +947,7 @@ def run_regression(args: argparse.Namespace) -> None:
     report("Unauthorized access check", detail="401 as expected")
 
     # Optional admin checks
-    admin_ready = run_admin_checks()
+    run_admin_checks()
 
     control_plane_result = run_control_plane_demo()
     if control_plane_result and control_plane_result.get("api_key"):
@@ -961,6 +991,12 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         type=int,
         default=1000,
         help="Submit a grid job that computes Fibonacci(n). Set to 0 to skip.",
+    )
+    parser.add_argument(
+        "--grid-split",
+        type=int,
+        default=0,
+        help="Submit a split grid job (fib_split) with chunked segments; 0 to skip.",
     )
     return parser.parse_args(argv)
 
