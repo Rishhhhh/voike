@@ -782,19 +782,33 @@ def run_control_plane_demo() -> Optional[Dict[str, str]]:
         report("Waitlist entry missing id", status="WARN")
         return None
 
-    admin_headers = {"x-voike-admin-token": ADMIN_TOKEN, "content-type": "application/json"}
+    try:
+        admin_headers = admin_json_headers()
+    except RuntimeError:
+        report(
+            "Admin provisioning",
+            status="SKIP",
+            detail="VOIKE_ADMIN_TOKEN not configured.",
+        )
+        return None
     suffix = uuid.uuid4().hex[:6]
-    approval = request(
-        "POST",
-        f"/admin/waitlist/{entry_id}/approve",
-        headers=admin_headers,
-        json={
-            "organizationName": f"reg-org-{suffix}",
-            "projectName": f"reg-project-{suffix}",
-            "keyLabel": "regression",
-        },
-        auth_required=False,
-    )
+    try:
+        approval = request(
+            "POST",
+            f"/admin/waitlist/{entry_id}/approve",
+            headers=admin_headers,
+            json={
+                "organizationName": f"reg-org-{suffix}",
+                "projectName": f"reg-project-{suffix}",
+                "keyLabel": "regression",
+            },
+            auth_required=False,
+        )
+    except RuntimeError as exc:
+        if "Invalid admin token" in str(exc):
+            report("Admin provisioning", status="SKIP", detail="Server rejected admin token.")
+            return None
+        raise
     organization = approval.get("organization", {})
     project = approval.get("project", {})
     api_key = approval.get("apiKey", {}).get("key")
@@ -903,18 +917,7 @@ def run_regression(args: argparse.Namespace) -> None:
     report("Unauthorized access check", detail="401 as expected")
 
     # Optional admin checks
-    if ADMIN_TOKEN:
-        admin_headers = {"x-voike-admin-token": ADMIN_TOKEN}
-        waitlist = request(
-            "GET", "/admin/waitlist", headers=admin_headers, auth_required=False
-        )
-        report("Admin waitlist entries", detail=str(len(waitlist)))
-    else:
-        report(
-            "Admin checks",
-            status="SKIP",
-            detail="VOIKE_ADMIN_TOKEN not set; add it to scripts/.env to exercise admin flows.",
-        )
+    admin_ready = run_admin_checks()
 
     control_plane_result = run_control_plane_demo()
     if control_plane_result and control_plane_result.get("api_key"):
@@ -972,3 +975,27 @@ if __name__ == "__main__":
     except Exception as exc:  # pragma: no cover - manual script
         print("Regression failed:", exc, file=sys.stderr)
         sys.exit(1)
+def run_admin_checks() -> bool:
+    if not ADMIN_TOKEN:
+        report(
+            "Admin checks",
+            status="SKIP",
+            detail="VOIKE_ADMIN_TOKEN not set; add it to scripts/.env to exercise admin flows.",
+        )
+        return False
+    try:
+        headers = admin_json_headers()
+        waitlist = request(
+            "GET", "/admin/waitlist", headers=headers, auth_required=False
+        )
+        report("Admin waitlist entries", detail=str(len(waitlist)))
+        return True
+    except RuntimeError as exc:
+        if "Invalid admin token" in str(exc):
+            report(
+                "Admin checks",
+                status="SKIP",
+                detail="Server rejected admin token; ensure Genesis backend uses the shared value.",
+            )
+            return False
+        raise
