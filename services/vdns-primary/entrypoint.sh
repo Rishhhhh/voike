@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+echo "[vdns-primary] entrypoint start"
 
 CORE_URL="${VOIKE_CORE_URL:-http://backend:8080}"
 ADMIN_TOKEN="${VOIKE_ADMIN_TOKEN:-${ADMIN_TOKEN:-}}"
@@ -16,10 +17,11 @@ fi
 trap "kill 0" EXIT
 
 mkdir -p "$(dirname "${ZONE_PATH}")" /etc/knot /run/knot /var/lib/knot
-chmod 755 /run/knot
+chmod 777 /run/knot /var/lib/knot
 if id knot &>/dev/null; then
   chown -R knot:knot /run/knot "$(dirname "${ZONE_PATH}")" /var/lib/knot || true
 fi
+echo "[vdns-primary] directories prepared"
 
 ensure_zone_perms() {
   if id knot &>/dev/null; then
@@ -54,18 +56,27 @@ fetch_zone() {
   fi
 }
 
-fetch_zone
-rc=$?
+SAFE_FETCH_RC=0
+safe_fetch_zone() {
+  set +e
+  fetch_zone
+  SAFE_FETCH_RC=$?
+  set -e
+}
+
+echo "[vdns-primary] fetching zone ${ZONE_ID} from ${CORE_URL}"
+safe_fetch_zone
+rc=$SAFE_FETCH_RC
 if [[ $rc -eq 2 ]]; then
   echo "[vdns-primary] fatal: unable to download initial zone" >&2
   exit 1
 fi
+echo "[vdns-primary] zone ready"
 
 cat >/etc/knot/knot.conf <<EOF
 server:
   identity: "${VDNS_IDENTITY:-voike-vdns-primary}"
   listen: ["0.0.0.0@53", "::@53"]
-  pid-file: "/var/lib/knot/knot.pid"
 log:
   - target: stdout
     any: info
@@ -79,8 +90,8 @@ EOF
 watch_zone() {
   while true; do
     sleep "${REFRESH_SECONDS}"
-    fetch_zone
-    rc=$?
+    safe_fetch_zone
+    rc=$SAFE_FETCH_RC
     if [[ $rc -eq 0 ]]; then
       echo "[vdns-primary] zone changed, reloading knotd"
       kill -HUP "${KNOT_PID}" || true
@@ -93,9 +104,3 @@ echo "[vdns-primary] starting knotd for ${ZONE_DOMAIN}"
 KNOT_PID=$!
 watch_zone &
 wait "${KNOT_PID}"
-ensure_zone_perms() {
-  if id knot &>/dev/null; then
-    chown knot:knot "${ZONE_PATH}" || true
-  fi
-  chmod 644 "${ZONE_PATH}"
-}
