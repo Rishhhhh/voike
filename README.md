@@ -217,7 +217,7 @@ Change data visibility via `/ai/policy` (`none`, `metadata`, `summaries`, `full`
 Telemetry wiring:
 - `/ingest` + `/query` + `/blobs` + `/grid/jobs` + `/ledger` events automatically create knowledge nodes (`ai_knowledge_nodes`).
 - Use `python scripts/voike_heartbeat.py` for a fast health probe (Core + AI endpoints).
-- Run `python scripts/voike_regression.py` for the full smoke test (ingest → query → MCP → AI → mesh).
+- Run `python scripts/voike_regression.py` for the full smoke test (ingest → query → MCP → AI → mesh). The script automatically loads `.env` so the same admin/project tokens are used for ledger replay, FLOW, SNRL, and VDNS checks across every node.
 
 ---
 

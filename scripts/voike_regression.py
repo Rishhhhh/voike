@@ -20,8 +20,13 @@ import requests
 
 
 def load_local_env() -> None:
-    env_path = Path(__file__).with_name(".env")
-    if not env_path.exists():
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / ".env",
+        script_dir.parent / ".env",
+    ]
+    env_path = next((path for path in candidates if path.exists()), None)
+    if not env_path:
         return
     for raw_line in env_path.read_text().splitlines():
         line = raw_line.strip()
@@ -42,7 +47,9 @@ API_KEY = os.environ.get(
     "VOIKE_API_KEY",
     "4cdef1e80151bc5684e1edb20e502033515c5144dbb6180b8f27cbd0e3883369",
 )
-ADMIN_TOKEN = os.environ.get("VOIKE_ADMIN_TOKEN")
+ADMIN_TOKEN = os.environ.get("VOIKE_ADMIN_TOKEN") or os.environ.get("ADMIN_TOKEN")
+ROUTING_DOMAIN = os.environ.get("VOIKE_ROUTING_DOMAIN", "api.voike.com")
+VDNS_ZONE_ID = os.environ.get("VDNS_ZONE_ID", "voike-com")
 DEFAULT_HEADERS = {
     "x-voike-api-key": API_KEY,
     "content-type": "application/json",
@@ -202,6 +209,12 @@ def mcp_execute(name: str, input_payload: Dict[str, Any]) -> Any:
 
 def project_json_headers(api_key: str) -> Dict[str, str]:
     return {"x-voike-api-key": api_key, "content-type": "application/json"}
+
+
+def admin_json_headers() -> Dict[str, str]:
+    if not ADMIN_TOKEN:
+        raise RuntimeError("ADMIN_TOKEN not configured; cannot call admin endpoints")
+    return {"x-voike-admin-token": ADMIN_TOKEN, "content-type": "application/json"}
 
 
 def run_ingest_and_query(context: str, project_api_key: Optional[str] = None) -> None:
@@ -581,6 +594,22 @@ def run_mesh_and_edge_checks() -> None:
     except Exception as exc:
         report("Mesh self", status="WARN", detail=str(exc))
     try:
+        mesh_headers: Dict[str, str] = {}
+        if ADMIN_TOKEN:
+            mesh_headers["x-voike-admin-token"] = ADMIN_TOKEN
+        mesh_nodes = request("GET", "/mesh/nodes", headers=mesh_headers or None)
+        node_ids = [node.get("nodeId") for node in mesh_nodes]
+        detail = f"count={len(node_ids)} ids={node_ids}"
+        status = "OK" if len(node_ids) >= 1 else "WARN"
+        report("Mesh nodes", status=status, detail=detail)
+        if len(node_ids) < 2:
+            report("Mesh redundancy", status="WARN", detail="less than 2 nodes visible")
+    except RuntimeError as exc:
+        if is_missing_endpoint(exc):
+            report("Mesh nodes", status="SKIP", detail="Endpoint unavailable on this build.")
+        else:
+            report("Mesh nodes", status="WARN", detail=str(exc))
+    try:
         edge_profile = request("GET", "/edge/profile")
         report("Edge profile", detail=str(edge_profile))
     except Exception as exc:
@@ -629,6 +658,83 @@ def run_mesh_and_edge_checks() -> None:
             report("Genesis clusterId", detail=str(genesis.get("clusterId")))
         except Exception as exc:
             report("Genesis fetch", status="WARN", detail=str(exc))
+
+
+def run_routing_checks() -> None:
+    banner("Routing stack (SNRL + VDNS)")
+    try:
+        snrl = request(
+            "POST",
+            "/snrl/resolve",
+            json={
+                "domain": ROUTING_DOMAIN,
+                "client": {"region": "dev-local", "capabilities": ["http", "gpu"]},
+            },
+        )
+        candidates = snrl.get("candidates", [])
+        report("SNRL candidates", detail=f"{len(candidates)} for {ROUTING_DOMAIN}")
+    except RuntimeError as exc:
+        if is_missing_endpoint(exc):
+            report("SNRL resolve", status="SKIP", detail="Endpoint missing in this build.")
+        else:
+            report("SNRL resolve", status="WARN", detail=str(exc))
+    if ADMIN_TOKEN:
+        headers = admin_json_headers()
+        try:
+            endpoints = request(
+                "GET",
+                "/snrl/endpoints",
+                headers=headers,
+                auth_required=False,
+            )
+            report("SNRL registered endpoints", detail=str(len(endpoints)))
+        except Exception as exc:
+            report("SNRL endpoint list", status="WARN", detail=str(exc))
+        try:
+            zone_text = request(
+                "GET",
+                f"/vdns/zones/{VDNS_ZONE_ID}/export",
+                headers=headers,
+                auth_required=False,
+            )
+            report("VDNS zone bytes", detail=str(len(zone_text)))
+        except Exception as exc:
+            report("VDNS export", status="WARN", detail=str(exc))
+    else:
+        report("VDNS export", status="SKIP", detail="ADMIN_TOKEN not configured")
+
+
+def run_resilience_checks() -> None:
+    banner("Resilience + Snapshots")
+    try:
+        replay = request(
+            "POST",
+            "/ledger/replay",
+            json={"limit": 5},
+        )
+        report(
+            "Ledger replay",
+            detail=f"count={replay.get('count')} finalEnergy={replay.get('finalEnergy')}",
+        )
+        anchor = request(
+            "POST",
+            "/ledger/anchor",
+            json={"limit": 50},
+        )
+        report("Ledger anchor hash", detail=str(anchor.get("anchor")))
+    except RuntimeError as exc:
+        if is_missing_endpoint(exc):
+            report("Ledger replay/anchor", status="SKIP", detail="Endpoints missing in this build.")
+        else:
+            report("Ledger replay/anchor", status="WARN", detail=str(exc))
+    try:
+        capsules = request("GET", "/capsules")
+        report("Capsule inventory", detail=f"{len(capsules)} snapshots available")
+    except RuntimeError as exc:
+        if is_missing_endpoint(exc):
+            report("Capsule list", status="SKIP", detail="Capsule endpoints missing.")
+        else:
+            report("Capsule list", status="WARN", detail=str(exc))
 
 
 def run_mcp_blob_tool(api_key: str) -> None:
@@ -831,6 +937,8 @@ def run_regression(args: argparse.Namespace) -> None:
         run_mcp_blob_tool(API_KEY)
 
     run_mesh_and_edge_checks()
+    run_routing_checks()
+    run_resilience_checks()
 
     banner("Python regression completed successfully ✅")
 
