@@ -30,6 +30,11 @@ from typing import Any, Dict, Optional
 
 import requests
 
+try:  # Optional pretty progress; falls back silently if missing.
+  from tqdm.auto import tqdm
+except Exception:  # pragma: no cover - tqdm is optional
+  tqdm = None  # type: ignore[assignment]
+
 
 def load_local_env() -> None:
   """Load .env or .env.example from repo/scripts/ root if present.
@@ -125,7 +130,13 @@ def check_health_and_mesh() -> None:
   report("/mesh/self", detail=json.dumps(mesh_self))
   if ADMIN_TOKEN:
     mesh_nodes = request("GET", "/mesh/nodes", headers=admin_headers(), auth_required=False)
-    report("/mesh/nodes", detail=f"nodes={len(mesh_nodes or [])}")
+    count = len(mesh_nodes or [])
+    regions: Dict[str, int] = {}
+    for node in mesh_nodes or []:
+      region = node.get("region") or (node.get("meta") or {}).get("region") or "unknown"
+      regions[region] = regions.get(region, 0) + 1
+    region_summary = ", ".join(f"{r}:{n}" for r, n in regions.items())
+    report("/mesh/nodes", detail=f"nodes={count} regions=[{region_summary}]")
     genesis = request("GET", "/genesis", headers=admin_headers(), auth_required=False)
     report("/genesis", detail=json.dumps(genesis))
   else:
@@ -269,15 +280,106 @@ def check_streams() -> None:
   report("/streams/{id}/profile", detail=json.dumps(profile))
 
 
+def wait_for_grid_job(job_id: str, attempts: int = 240, delay_seconds: float = 1.0) -> Any:
+  """Poll /grid/jobs/{id} until SUCCEEDED/FAILED or timeout."""
+
+  for _ in range(attempts):
+    job = request("GET", f"/grid/jobs/{job_id}")
+    status = job.get("status")
+    if status in ("SUCCEEDED", "FAILED"):
+      return job
+    time.sleep(delay_seconds)
+  raise TimeoutError(f"Grid job {job_id} did not finish after {attempts} attempts.")
+
+
+def fibonacci_local(n: int) -> str:
+  a, b = 0, 1
+  for _ in range(n):
+    a, b = b, a + b
+  return str(a)
+
+
+def check_grid_parallel() -> None:
+  """Submit a split Fibonacci job and verify multi-node execution."""
+
+  banner("Grid: parallel Fibonacci split across nodes")
+  n = 2000
+  params: Dict[str, Any] = {"task": "fib_split", "n": n, "chunkSize": 500}
+
+  # If admin access is available, try to discover at least two mesh nodes and
+  # pin child segments round-robin across them using preferNodeId.
+  if ADMIN_TOKEN:
+    try:
+      mesh_nodes = request("GET", "/mesh/nodes", headers=admin_headers(), auth_required=False)
+      node_ids = []
+      for node in mesh_nodes or []:
+        node_id = node.get("nodeId") or node.get("node_id")
+        if node_id:
+          node_ids.append(node_id)
+      unique_nodes = sorted({nid for nid in node_ids if nid})
+      if len(unique_nodes) >= 2:
+        params["childNodeIds"] = unique_nodes[:2]
+        report("Grid childNodeIds", detail=f"Round-robin across {params['childNodeIds']}")
+      else:
+        report("Grid childNodeIds", status="WARN", detail="Only one node visible; parallelism best-effort")
+    except Exception as exc:
+      report("Grid childNodeIds", status="WARN", detail=f"mesh/nodes lookup failed: {exc}")
+
+  payload = {"type": "custom", "params": params}
+
+  start = time.time()
+  resp = request("POST", "/grid/jobs", json_payload=payload)
+  job_id = resp["jobId"]
+  report("/grid/jobs (split submit)", detail=f"jobId={job_id}")
+
+  job = wait_for_grid_job(job_id)
+  status = job.get("status")
+  if status != "SUCCEEDED":
+    raise RuntimeError(f"Split grid job {job_id} ended with status {status}")
+
+  result = (job.get("result") or {}).get("fib")
+  local = fibonacci_local(n)
+  if result != local:
+    report("Grid split fib mismatch", status="WARN", detail=f"grid={result} local={local}")
+  else:
+    report("Grid split fib validated", detail=str(result))
+
+  segments = (job.get("result") or {}).get("segments") or []
+  report("Grid split segments", detail=f"childJobs={len(segments)}")
+
+  if segments:
+    node_ids = []
+    for seg_id in segments:
+      seg_job = request("GET", f"/grid/jobs/{seg_id}")
+      node_ids.append(seg_job.get("assigned_node_id"))
+    unique_nodes = sorted({nid for nid in node_ids if nid})
+    status = "OK" if len(unique_nodes) > 1 else "WARN"
+    report("Grid parallelism", status=status, detail=f"uniqueNodes={len(unique_nodes)} {unique_nodes}")
+
+  elapsed_ms = int((time.time() - start) * 1000)
+  report("Grid split timing", detail=f"{elapsed_ms}ms (end-to-end)")
+
+
 def main() -> None:
   if not API_KEY:
     raise RuntimeError("VOIKE_API_KEY must be set for full regression")
 
-  check_health_and_mesh()
-  check_snrl_hypermesh_trust()
-  check_ingestion_and_lineage()
-  check_hybrid_query()
-  check_streams()
+  phases = [
+    ("Core health + mesh/genesis", check_health_and_mesh),
+    ("Modules 4–6: SNRL + Hypermesh + Trust", check_snrl_hypermesh_trust),
+    ("Module 7: Ingestion + lineage/schema/transform", check_ingestion_and_lineage),
+    ("Module 8: Hybrid querying & reasoning", check_hybrid_query),
+    ("Module 9: Streams + checkpoints + profiles", check_streams),
+    ("Grid split Fibonacci (parallelism)", check_grid_parallel),
+  ]
+
+  if tqdm is not None:
+    for _, fn in tqdm(phases, desc="VOIKE full regression", unit="phase"):
+      fn()
+  else:
+    for _, fn in phases:
+      fn()
+
   report("Full system regression completed", status="OK")
 
 

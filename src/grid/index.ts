@@ -213,6 +213,9 @@ export class GridService {
 
   private shouldRunJob(job: any) {
     const params = job.params || {};
+    if (params.preferNodeId && params.preferNodeId !== config.node.id) {
+      return false;
+    }
     if (params.preferLocalEdge && !['edge', 'village'].includes(config.node.role)) {
       return false;
     }
@@ -255,23 +258,32 @@ export class GridService {
   private async runFibSplitJob(job: any) {
     const n = Math.max(0, Number(job.params?.n ?? 0));
     const chunkSize = Math.max(1, Number(job.params?.chunkSize ?? 500));
+    const childNodeIds: string[] = Array.isArray(job.params?.childNodeIds)
+      ? (job.params.childNodeIds as string[])
+      : [];
     if (n === 0) {
       return { fib: '0', segments: [] };
     }
     const chunkJobs: string[] = [];
     let remaining = n;
+    let index = 0;
     while (remaining > 0) {
       const chunk = Math.min(chunkSize, remaining);
       remaining -= chunk;
+      const childParams: Record<string, unknown> = {
+        task: 'fib_matrix',
+        power: chunk,
+      };
+      if (childNodeIds.length) {
+        childParams.preferNodeId = childNodeIds[index % childNodeIds.length];
+      }
       const childId = await this.submitJob({
         projectId: job.project_id,
         type: 'custom',
-        params: {
-          task: 'fib_matrix',
-          power: chunk,
-        },
+        params: childParams,
       });
       chunkJobs.push(childId);
+      index += 1;
     }
     const childResults = await Promise.all(chunkJobs.map((childId) => this.waitForJob(childId)));
     const matrices: FibMatrix[] = [];
