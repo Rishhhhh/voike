@@ -1,13 +1,88 @@
 openapi: 3.0.3
-time: '2024-01-01T00:00:00Z'
 info:
   title: VOIKE-X Backend API
-  version: 0.1.0
+  version: 3.0.0
+  description: |
+    HTTP API for VOIKE-X Core, AI, Chat, Hybrid Query, Streams, and Grid.
+    This specification is intentionally high-level: many response payloads are
+    represented as generic objects so the document stays maintainable while the
+    product evolves.
 servers:
   - url: http://localhost:8080
+    description: Local Docker
+  - url: https://voike.supremeuf.com
+    description: Genesis / Playground
+
+tags:
+  - name: discovery
+    description: Landing, health, and cluster discovery.
+  - name: auth
+    description: Waitlist, organizations, projects, and builder auth.
+  - name: ingestion
+    description: File ingestion and Module 7 Omni Ingestion.
+  - name: query
+    description: Core query and Module 8 hybrid reasoning.
+  - name: kernel
+    description: Kernel and Truth Ledger.
+  - name: ai
+    description: Knowledge Fabric and AI surfaces.
+  - name: chat
+    description: Project-scoped chat sessions.
+  - name: blobgrid
+    description: Blob storage and manifests.
+  - name: grid
+    description: Grid jobs and VVM.
+  - name: capsules
+    description: Capsules and replay/restore.
+  - name: streams
+    description: Module 9 streams and checkpoints.
+  - name: snrl
+    description: SNRL predictive resolver and POP metadata.
+  - name: hypermesh
+    description: Hypermesh telemetry and routes (Module 5).
+  - name: trust
+    description: PQC / trust / PTA (Module 6).
+  - name: flow
+    description: FLOW compiler and execution.
+  - name: vpkg
+    description: VPKG bundle registry and app launcher.
+  - name: env
+    description: Environment descriptors.
+  - name: orchestrator
+    description: VOIKE 3.0 orchestrator graph, agents, and tasks.
+  - name: agents
+    description: Agent registry and runtime.
+  - name: ops
+    description: Metrics, SLOs, and advisories.
+
 paths:
+  /:
+    get:
+      tags: [discovery]
+      summary: Landing page
+      description: Tailwind landing page with docs and curl examples.
+      responses:
+        '200':
+          description: HTML landing page
+          content:
+            text/html:
+              schema:
+                type: string
+  /info:
+    get:
+      tags: [discovery]
+      summary: Info payload
+      description: JSON mirror of the landing page content (quickstart, endpoints, playground key).
+      responses:
+        '200':
+          description: Info payload
+          content:
+            application/json:
+              schema:
+                type: object
   /health:
     get:
+      tags: [discovery]
       summary: Service health
       responses:
         '200':
@@ -23,9 +98,197 @@ paths:
                     type: string
                   kernel:
                     type: number
+  /genesis:
+    get:
+      tags: [discovery]
+      summary: Genesis cluster document
+      security:
+        - AdminTokenAuth: []
+      responses:
+        '200':
+          description: Genesis info
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /waitlist:
+    post:
+      tags: [auth]
+      summary: Join waitlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Waitlist entry
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /admin/waitlist:
+    get:
+      tags: [auth]
+      summary: List waitlist entries
+      security:
+        - AdminTokenAuth: []
+      responses:
+        '200':
+          description: Entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /admin/waitlist/{id}/approve:
+    post:
+      tags: [auth]
+      summary: Approve waitlist entry and mint project key
+      security:
+        - AdminTokenAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Organization, project, and API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProjectResponse'
+
+  /admin/projects:
+    post:
+      tags: [auth]
+      summary: Create project + API key
+      security:
+        - AdminTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '200':
+          description: Project and API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProjectResponse'
+
+  /auth/check-whitelist:
+    post:
+      tags: [auth]
+      summary: Check if email is approved
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Status payload
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /auth/setup-password:
+    post:
+      tags: [auth]
+      summary: One-time password setup for approved builder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Success
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Builder login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+
+  /user/profile:
+    get:
+      tags: [auth]
+      summary: Current builder profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                type: object
+
   /ingest/file:
     post:
+      tags: [ingestion]
       summary: Ingest a file
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -36,21 +299,22 @@ paths:
                 file:
                   type: string
                   format: binary
+                logicalName:
+                  type: string
       responses:
         '202':
           description: Job accepted
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  jobId:
-                    type: string
-                  table:
-                    type: string
+                $ref: '#/components/schemas/IngestJobAccepted'
+
   /ingest/{jobId}:
     get:
+      tags: [ingestion]
       summary: Get ingest job
+      security:
+        - ApiKeyAuth: []
       parameters:
         - in: path
           name: jobId
@@ -59,14 +323,107 @@ paths:
             type: string
       responses:
         '200':
-          description: Job
+          description: Ingest job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestJob'
+
+  /ingestion/jobs:
+    get:
+      tags: [ingestion]
+      summary: List ingestion jobs
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IngestJob'
+
+  /ingestion/lineage:
+    get:
+      tags: [ingestion]
+      summary: Ingestion lineage entries
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lineage
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /ingestion/schema/infer:
+    post:
+      tags: [ingestion]
+      summary: Infer schema from sample rows
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rows:
+                  type: array
+                  items:
+                    type: object
+                logicalName:
+                  type: string
+      responses:
+        '200':
+          description: Inferred schema
           content:
             application/json:
               schema:
                 type: object
+
+  /ingestion/transform/plan:
+    post:
+      tags: [ingestion]
+      summary: Plan ingestion transformations
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Transform plan
+          content:
+            application/json:
+              schema:
+                type: object
+
   /query:
     post:
+      tags: [query]
       summary: Execute hybrid query
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -79,17 +436,34 @@ paths:
           content:
             application/json:
               schema:
+                $ref: '#/components/schemas/VDBQueryResult'
+
+  /hybrid/query:
+    post:
+      tags: [query]
+      summary: Module 8 hybrid query
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Hybrid query result and plan
+          content:
+            application/json:
+              schema:
                 type: object
-                properties:
-                  rows:
-                    type: array
-                    items:
-                      type: object
-                  meta:
-                    $ref: '#/components/schemas/VDBMeta'
+
   /kernel/state:
     get:
+      tags: [kernel]
       summary: Kernel + DAI state
+      security:
+        - ApiKeyAuth: []
       responses:
         '200':
           description: State payload
@@ -97,16 +471,13 @@ paths:
             application/json:
               schema:
                 type: object
-                properties:
-                  energy:
-                    type: number
-                  dai:
-                    type: object
-                  limits:
-                    type: object
+
   /ledger/recent:
     get:
+      tags: [kernel]
       summary: Recent Truth Ledger entries
+      security:
+        - ApiKeyAuth: []
       responses:
         '200':
           description: Entries array
@@ -116,21 +487,300 @@ paths:
                 type: array
                 items:
                   type: object
-  /mcp/tools:
+
+  /ledger/{id}:
     get:
-      summary: List MCP tools
+      tags: [kernel]
+      summary: Get a ledger entry
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: Tools
+          description: Ledger entry
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ai/ask:
+    post:
+      tags: [ai]
+      summary: Knowledge Fabric Q&A
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question:
+                  type: string
+      responses:
+        '200':
+          description: AI answer bundle
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ai/atlas:
+    get:
+      tags: [ai]
+      summary: Knowledge Atlas overview
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Atlas
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /chat:
+    post:
+      tags: [chat]
+      summary: Send a chat message
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                sessionId:
+                  type: string
+      responses:
+        '200':
+          description: Chat reply
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /chat/sessions:
+    get:
+      tags: [chat]
+      summary: List chat sessions
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Sessions
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/McpTool'
-  /mcp/execute:
+                  type: object
+
+  /blobs:
     post:
-      summary: Execute MCP tool
+      tags: [blobgrid]
+      summary: Upload a blob
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Blob metadata
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /blobs/{id}/manifest:
+    get:
+      tags: [blobgrid]
+      summary: Get blob manifest
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Manifest
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /grid/jobs:
+    post:
+      tags: [grid]
+      summary: Submit a grid job
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Job handle
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /grid/jobs/{id}:
+    get:
+      tags: [grid]
+      summary: Get a grid job
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /capsules:
+    post:
+      tags: [capsules]
+      summary: Create a capsule snapshot
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Capsule info
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /capsules/{id}:
+    get:
+      tags: [capsules]
+      summary: Get capsule details
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Capsule
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /snrl/resolve:
+    post:
+      tags: [snrl]
+      summary: Semantic resolver
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                domain:
+                  type: string
+      responses:
+        '200':
+          description: Resolver result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /snrl/predictions:
+    get:
+      tags: [snrl]
+      summary: Predictive cache entries
+      security:
+        - AdminTokenAuth: []
+      responses:
+        '200':
+          description: Predictions
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /hypermesh/status:
+    get:
+      tags: [hypermesh]
+      summary: Hypermesh status snapshot
+      security:
+        - AdminTokenAuth: []
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /trust/status:
+    get:
+      tags: [trust]
+      summary: PQC / trust / PTA status
+      security:
+        - AdminTokenAuth: []
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /streams:
+    post:
+      tags: [streams]
+      summary: Create a stream
+      security:
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -140,18 +790,390 @@ paths:
               properties:
                 name:
                   type: string
-                input:
-                  type: object
-                context:
-                  type: object
       responses:
         '200':
-          description: Tool response
+          description: Stream
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stream'
+    get:
+      tags: [streams]
+      summary: List streams
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Streams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Stream'
+
+  /streams/{id}/events:
+    post:
+      tags: [streams]
+      summary: Append event to stream
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StreamEventAppend'
+      responses:
+        '200':
+          description: Event appended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamEvent'
+    get:
+      tags: [streams]
+      summary: List stream events
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: since
+          schema:
+            type: integer
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StreamEvent'
+
+  /streams/{id}/checkpoints:
+    post:
+      tags: [streams]
+      summary: Create stream checkpoint
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StreamCheckpointCreate'
+      responses:
+        '200':
+          description: Checkpoint created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamCheckpoint'
+    get:
+      tags: [streams]
+      summary: List stream checkpoints
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Checkpoints
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StreamCheckpoint'
+
+  /streams/{id}/profile:
+    get:
+      tags: [streams]
+      summary: Get stream profile
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StreamProfile'
+
+  /flow/parse:
+    post:
+      tags: [flow]
+      summary: Parse FLOW source
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: AST + warnings
           content:
             application/json:
               schema:
                 type: object
+
+  /flow/plan:
+    post:
+      tags: [flow]
+      summary: Compile FLOW source into plan graph
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Plan graph
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /flow/execute:
+    post:
+      tags: [flow]
+      summary: Execute FLOW plan
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vpkgs:
+    post:
+      tags: [vpkg]
+      summary: Publish VPKG bundle
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: VPKG created
+          content:
+            application/json:
+              schema:
+                type: object
+    get:
+      tags: [vpkg]
+      summary: List VPKGs
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: VPKGs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /env/descriptors:
+    post:
+      tags: [env]
+      summary: Register environment descriptor
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+    get:
+      tags: [env]
+      summary: List environment descriptors
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Descriptors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /orchestrator/projects:
+    post:
+      tags: [orchestrator]
+      summary: Register orchestrator project
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /agents:
+    post:
+      tags: [agents]
+      summary: Register an agent
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentDefinition'
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+    get:
+      tags: [agents]
+      summary: List agents
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Agent'
+
+  /agents/{id}/run:
+    post:
+      tags: [agents]
+      summary: Run a registered agent
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                intent:
+                  type: string
+                payload:
+                  type: object
+      responses:
+        '200':
+          description: Agent run result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus metrics
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-voike-api-key
+    AdminTokenAuth:
+      type: apiKey
+      in: header
+      name: x-voike-admin-token
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     VDBQuery:
       type: object
@@ -167,21 +1189,120 @@ components:
           type: object
         target:
           type: string
-    VDBMeta:
+    VDBQueryResult:
       type: object
       properties:
-        engine:
+        rows:
+          type: array
+          items:
+            type: object
+        meta:
+          type: object
+    IngestJobAccepted:
+      type: object
+      properties:
+        jobId:
           type: string
+        table:
+          type: string
+    IngestJob:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        summary:
+          type: object
+    Stream:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    StreamEventAppend:
+      type: object
+      properties:
+        payload:
+          type: object
         latencyMs:
           type: number
-        correctedQuery:
-          type: object
-        kernelTraceId:
+        throughput:
+          type: number
+    StreamEvent:
+      type: object
+      properties:
+        id:
           type: string
-    McpTool:
+        sequence:
+          type: integer
+        payload:
+          type: object
+    StreamCheckpointCreate:
+      type: object
+      properties:
+        position:
+          type: integer
+        metadata:
+          type: object
+    StreamCheckpoint:
+      type: object
+      properties:
+        id:
+          type: string
+        position:
+          type: integer
+        metadata:
+          type: object
+    StreamProfile:
+      type: object
+      properties:
+        streamId:
+          type: string
+        windowSeconds:
+          type: integer
+        averageLatencyMs:
+          type: number
+        throughputPerSecond:
+          type: number
+    AgentDefinition:
       type: object
       properties:
         name:
           type: string
-        description:
+        class:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        tools:
+          type: array
+          items:
+            type: string
+    Agent:
+      allOf:
+        - $ref: '#/components/schemas/AgentDefinition'
+        - type: object
+          properties:
+            id:
+              type: string
+    AdminProjectResponse:
+      type: object
+      properties:
+        organization:
+          type: object
+        project:
+          type: object
+        apiKey:
+          type: object
+    CreateProjectRequest:
+      type: object
+      properties:
+        organizationName:
+          type: string
+        projectName:
+          type: string
+        keyLabel:
           type: string

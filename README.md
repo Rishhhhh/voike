@@ -293,6 +293,7 @@ FLOW does not require the host OS to ship every SDK. Instead:
 - `npm run lint` – TypeScript type-check (tsc --noEmit).
 - `npm run regression` – TypeScript regression harness (CSV ingest → query → kernel/ledger).
 - `python scripts/voike_regression.py` – full Python regression (ingest, query, MCP, blob, VVM, Ops, APIX, AI, mesh).
+- `python scripts/voike_full_system_regression.py` – Modules 1–9 regression (core health/mesh/genesis, SNRL/Hypermesh/Trust, Omni Ingestion, Hybrid Query, Streams, and split Grid Fibonacci with node-parallelism checks).
 - `python scripts/voike_heartbeat.py` – lightweight Core+AI check (health, query, AI policy/ask, IRX, pipeline analysis).
 - `npm run seed` – optional seeding script (ensures migrations + sample data).
 - CLI (in `cli/`) now includes:
@@ -464,7 +465,7 @@ These services now live inside the repo so AI agents or ops engineers can build/
 ## 10. Keep VOIKE Healthy
 
 1. **Heartbeat**: schedule `python scripts/voike_heartbeat.py` every few minutes. It fails fast if the playground isn’t responding.
-2. **Regression**: run `python scripts/voike_regression.py` before releases or major upgrades.
+2. **Regression**: run `python scripts/voike_full_system_regression.py` (or `python scripts/voike_regression.py` for a lighter check) before releases or major upgrades.
 3. **Telemetry**: watch `/metrics`, `/ops/advisories`, `/ai/ops/triage`. AI triage surfaces runbooks.
 4. **Capsules**: create periodic snapshots (`POST /capsules`) before risky deployments.
 5. **Docs**: update `docs/api.md`, `docs/regression_playground.md`, `docs/ai_fabric.md` when adding new endpoints so external teams stay aligned.

@@ -442,7 +442,7 @@ curl -X PUT https://voike.supremeuf.com/ops/slos \
 ## 6. Regression Coverage
 - `npm run regression` (TypeScript) – CSV ingest → `/ingest/{jobId}` polling → `/query` → `/kernel/state` → `/ledger/recent`.
 - `python scripts/voike_regression.py` – All of the above **plus** waitlist signup, optional admin approval (if `VOIKE_ADMIN_TOKEN` is set), builder password setup + login, `/user/profile`, `/user/projects`, secondary ingestion/query using the newly minted API key, `/metrics`, `/mcp/*`, and Fibonacci SQL benchmarking.
-- Future additions (documented already) will extend the suites to hit BlobGrid, Grid jobs, capsules, and edge sync once modules land.
+- `python scripts/voike_full_system_regression.py` – Modules 1–9 end-to-end check (core health/mesh/genesis, SNRL + Hypermesh + Trust, Omni Ingestion, Hybrid Query, Streams, and a split Grid Fibonacci job with node-parallelism diagnostics). Uses the same `.env`/Playground env vars as Docker.
 
 ## 7. References
 - `README.md` – deployment & operational guide (Docker-only bootstrap on any machine).

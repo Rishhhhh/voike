@@ -1,0 +1,268 @@
+FLOW "VOIKE Bible — Core, AI, Streams, Grid"
+
+INPUTS
+  text projectId
+  text datasetPath optional
+  text logicalName optional
+  text hybridSql optional
+  text hybridQuestion optional
+  text streamName optional
+  number fibIndex optional
+END INPUTS
+
+# 1. Ingest data (Module 1 + 7)
+
+STEP ingest_plan =
+  APX_EXEC "ingest.prepare"
+    WITH {
+      projectId = projectId,
+      filePath = datasetPath,
+      logicalName = logicalName
+    }
+
+STEP ingest_run =
+  APX_EXEC "ingest.execute"
+    WITH {
+      projectId = projectId,
+      planId = ingest_plan.planId
+    }
+
+STEP ingestion_lineage =
+  APX_EXEC "ingestion.listLineage"
+    WITH {
+      projectId = projectId,
+      limit = 10
+    }
+
+STEP ingestion_schema =
+  APX_EXEC "ingestion.inferSchema"
+    WITH {
+      projectId = projectId,
+      sampleRows = ingest_run.sampleRows
+    }
+
+STEP ingestion_transform_plan =
+  APX_EXEC "ingestion.planTransform"
+    WITH {
+      projectId = projectId,
+      schema = ingestion_schema.schema
+    }
+
+# 2. Hybrid query + Knowledge Fabric (Module 2 + 8)
+
+STEP hybrid_query =
+  APX_EXEC "query.runHybrid"
+    WITH {
+      projectId = projectId,
+      sql = hybridSql,
+      semanticText = hybridQuestion
+    }
+
+STEP hybrid_profile =
+  APX_EXEC "hybrid.profileQuery"
+    WITH {
+      projectId = projectId,
+      sql = hybridSql,
+      semanticText = hybridQuestion
+    }
+
+STEP ai_answer =
+  APX_EXEC "agents.fastAnswer"
+    WITH {
+      projectId = projectId,
+      question = hybridQuestion
+    }
+
+STEP ai_atlas =
+  APX_EXEC "ai.fetchAtlas"
+    WITH {
+      projectId = projectId,
+      table = ingest_run.table
+    }
+
+# 3. Chat session wired to Knowledge Fabric (Chat + AI)
+
+STEP chat_open =
+  APX_EXEC "chat.openSession"
+    WITH {
+      projectId = projectId,
+      message = "Bootstrap VOIKE chat for this dataset",
+      contextTable = ingest_run.table
+    }
+
+STEP chat_followup =
+  APX_EXEC "chat.sendMessage"
+    WITH {
+      projectId = projectId,
+      sessionId = chat_open.sessionId,
+      message = hybridQuestion
+    }
+
+# 4. Streams + checkpoints + profiles (Module 9)
+
+STEP stream_create =
+  APX_EXEC "streams.create"
+    WITH {
+      projectId = projectId,
+      name = streamName,
+      metadata = {
+        "sourceTable": ingest_run.table,
+        "kind": "metrics"
+      }
+    }
+
+STEP stream_append_query =
+  APX_EXEC "streams.appendEvent"
+    WITH {
+      projectId = projectId,
+      streamId = stream_create.streamId,
+      payload = {
+        "type": "hybrid_query",
+        "sql": hybridSql,
+        "question": hybridQuestion,
+        "latencyMs": hybrid_query.meta.latencyMs
+      }
+    }
+
+STEP stream_append_ai =
+  APX_EXEC "streams.appendEvent"
+    WITH {
+      projectId = projectId,
+      streamId = stream_create.streamId,
+      payload = {
+        "type": "ai_answer",
+        "question": hybridQuestion,
+        "answer": ai_answer.answer
+      }
+    }
+
+STEP stream_checkpoint =
+  APX_EXEC "streams.createCheckpoint"
+    WITH {
+      projectId = projectId,
+      streamId = stream_create.streamId,
+      position = stream_append_ai.sequence,
+      metadata = {
+        "reason": "post-hybrid-and-ai",
+        "table": ingest_run.table
+      }
+    }
+
+STEP stream_profile =
+  APX_EXEC "streams.profile"
+    WITH {
+      projectId = projectId,
+      streamId = stream_create.streamId
+    }
+
+# 5. Grid + VVM (Module 3 + Grid helpers)
+
+STEP grid_submit_fib =
+  APX_EXEC "grid.submitFibSplit"
+    WITH {
+      projectId = projectId,
+      n = fibIndex
+    }
+
+STEP grid_wait_fib =
+  APX_EXEC "grid.awaitJob"
+    WITH {
+      projectId = projectId,
+      jobId = grid_submit_fib.jobId
+    }
+
+STEP grid_segments =
+  APX_EXEC "grid.inspectSegments"
+    WITH {
+      projectId = projectId,
+      jobId = grid_submit_fib.jobId
+    }
+
+# 6. SNRL + Hypermesh + Trust (Modules 4–6)
+
+STEP snrl_resolve =
+  APX_EXEC "snrl.resolve"
+    WITH {
+      projectId = projectId,
+      domain = "api.voike.com",
+      client = {
+        "region": "ap-sg",
+        "capabilities": ["http", "gpu"]
+      }
+    }
+
+STEP hypermesh_status =
+  APX_EXEC "hypermesh.status"
+    WITH {
+      projectId = projectId
+    }
+
+STEP trust_status =
+  APX_EXEC "trust.status"
+    WITH {
+      projectId = projectId
+    }
+
+# 7. Capsule snapshot + ledger anchor (Resilience)
+
+STEP capsule_snapshot =
+  APX_EXEC "capsules.snapshot"
+    WITH {
+      projectId = projectId,
+      note = "VOIKE Bible end-to-end snapshot",
+      includeBlobs = true
+    }
+
+STEP ledger_anchor =
+  APX_EXEC "ledger.anchorRecent"
+    WITH {
+      projectId = projectId,
+      limit = 100
+    }
+
+# 8. Human-readable summary
+
+STEP summary =
+  OUTPUT_TEXT {
+    projectId = projectId,
+    dataset = {
+      table = ingest_run.table,
+      jobId = ingest_run.jobId,
+      lineageCount = ingestion_lineage.count
+    },
+    hybrid = {
+      latencyMs = hybrid_query.meta.latencyMs,
+      engine = hybrid_query.meta.engine,
+      profile = hybrid_profile
+    },
+    ai = {
+      answer = ai_answer.answer,
+      atlasPreview = ai_atlas.summary
+    },
+    chat = {
+      sessionId = chat_open.sessionId,
+      lastMessageId = chat_followup.messageId
+    },
+    streams = {
+      streamId = stream_create.streamId,
+      lastCheckpoint = stream_checkpoint.checkpointId,
+      profile = stream_profile
+    },
+    grid = {
+      jobId = grid_submit_fib.jobId,
+      value = grid_wait_fib.value,
+      segments = grid_segments
+    },
+    network = {
+      snrl = snrl_resolve,
+      hypermesh = hypermesh_status,
+      trust = trust_status
+    },
+    resilience = {
+      capsuleId = capsule_snapshot.capsuleId,
+      ledgerAnchor = ledger_anchor.anchor
+    }
+  }
+
+END FLOW
+
