@@ -82,7 +82,8 @@ services:
       context: ../../services/vdns-primary
     environment:
       VOIKE_CORE_URL: http://backend:8080
-      VOIKE_ADMIN_TOKEN: ${VOIKE_ADMIN_TOKEN:-voike-admin-placeholder}
+      # Force VDNS to use the same admin token as the backend so /vdns/zones/* exports never 401.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-voike-admin-5bb6c26f3a89441f8fbf95c7088795e4}
       VDNS_ZONE_ID: ${VDNS_ZONE_ID:-voike-com}
       VDNS_ZONE_DOMAIN: ${VDNS_ZONE_DOMAIN:-voike.supremeuf.com.}
       VDNS_REFRESH_SECONDS: ${VDNS_REFRESH_SECONDS:-60}
@@ -99,7 +100,8 @@ services:
       context: ../../services/vdns-secondary
     environment:
       VOIKE_CORE_URL: http://backend:8080
-      VOIKE_ADMIN_TOKEN: ${VOIKE_ADMIN_TOKEN:-voike-admin-placeholder}
+      # Force VDNS to use the same admin token as the backend so /vdns/zones/* exports never 401.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-voike-admin-5bb6c26f3a89441f8fbf95c7088795e4}
       VDNS_ZONE_ID: ${VDNS_ZONE_ID:-voike-com}
       VDNS_ZONE_DOMAIN: ${VDNS_ZONE_DOMAIN:-voike.supremeuf.com.}
       VDNS_IDENTITY: voike-vdns-secondary
@@ -114,4 +116,3 @@ services:
 
 volumes:
   genesis_postgres_data:
-
