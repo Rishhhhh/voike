@@ -210,6 +210,46 @@ def cmd_run(args: argparse.Namespace) -> None:
   raise SystemExit("voike run currently supports .py and .flow files.")
 
 
+def _ensure_git_repo() -> None:
+  if not (Path.cwd() / ".git").exists():
+    raise SystemExit("This command must be run inside a git clone (no .git directory found).")
+
+
+def cmd_pull(_: argparse.Namespace) -> None:
+  _ensure_git_repo()
+  completed = subprocess.run(["git", "pull"], check=False)
+  raise SystemExit(completed.returncode)
+
+
+def cmd_push(_: argparse.Namespace) -> None:
+  _ensure_git_repo()
+  completed = subprocess.run(["git", "push"], check=False)
+  raise SystemExit(completed.returncode)
+
+
+def cmd_upgrade(_: argparse.Namespace) -> None:
+  """Update the local VOIKE clone + Python CLI.
+
+  Equivalent to:
+    git pull
+    python -m pip install . --upgrade
+  """
+  _ensure_git_repo()
+  pull = subprocess.run(["git", "pull"], check=False)
+  if pull.returncode != 0:
+    raise SystemExit(pull.returncode)
+  install = subprocess.run(
+    [sys.executable, "-m", "pip", "install", ".", "--upgrade"],
+    check=False,
+  )
+  raise SystemExit(install.returncode)
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+  # Alias for upgrade.
+  cmd_upgrade(args)
+
+
 def build_parser() -> argparse.ArgumentParser:
   description = (
     "VOIKE CLI – talk to VOIKE Core/AI/FLOW over HTTP.\n\n"
@@ -324,6 +364,25 @@ def build_parser() -> argparse.ArgumentParser:
     help="Target file (e.g. app.flow or app.py)",
   )
   run.set_defaults(func=cmd_run)
+
+  # git helpers
+  pull = subparsers.add_parser("pull", help="Git pull in the current VOIKE repo")
+  pull.set_defaults(func=cmd_pull)
+
+  push = subparsers.add_parser("push", help="Git push in the current VOIKE repo")
+  push.set_defaults(func=cmd_push)
+
+  upgrade = subparsers.add_parser(
+    "upgrade",
+    help="Pull latest VOIKE repo changes and upgrade the local Python CLI",
+  )
+  upgrade.set_defaults(func=cmd_upgrade)
+
+  update = subparsers.add_parser(
+    "update",
+    help="Alias for 'voike upgrade'",
+  )
+  update.set_defaults(func=cmd_update)
 
   return parser
 
