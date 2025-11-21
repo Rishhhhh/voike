@@ -37,7 +37,13 @@
       "@env/*": ["src/env/*"],
       "@orchestrator/*": ["src/orchestrator/*"],
       "@agents/*": ["src/agents/*"],
-      "@onboard/*": ["src/onboard/*"]
+      "@onboard/*": ["src/onboard/*"],
+      "@snrl/*": ["src/snrl/*"],
+      "@hypermesh/*": ["src/hypermesh/*"],
+      "@trust/*": ["src/trust/*"],
+      "@ingestion/*": ["src/ingestion/*"],
+      "@hybrid/*": ["src/hybrid/*"],
+      "@streams/*": ["src/streams/*"]
     }
   },
   "include": ["src/**/*.ts"],
