@@ -347,6 +347,20 @@ npm run build  # compile TypeScript into dist/
 npm link       # registers the `voike` binary globally
 ```
 
+Once published, you can also install the Node CLI from npm:
+
+```bash
+npm install -g voike
+```
+
+and install the Python wrapper from PyPI or this repo:
+
+```bash
+pip install voike      # when published
+# or, from the repo root:
+pip install .
+```
+
 Once linked, a quick way to create a project + API key via the admin token is:
 
 ```bash

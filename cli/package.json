@@ -1,5 +1,5 @@
 {
-  "name": "voike-cli",
+  "name": "voike",
   "version": "0.1.0",
   "description": "VOIKE developer CLI",
   "main": "dist/index.js",
