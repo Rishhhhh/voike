@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: VPKG
+metadata:
+  name: "voike-python-app"
+  version: "0.1.0"
+  description: "Example VOIKE app wrapping app.py + templates/ + static/."
+  tags: ["example", "python", "voike"]
+extra:
+  files:
+    - app.py
+    - templates/index.html
+    - static/style.css
+

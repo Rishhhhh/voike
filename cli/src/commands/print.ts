@@ -10,7 +10,7 @@ export function registerPrint(program: Command) {
       let resolved: string;
 
       if (!target || target === '.flow') {
-        resolved = path.join(process.cwd(), 'flows', 'voike-bible.flow');
+        resolved = path.join(process.cwd(), 'flows', 'voike.flow');
       } else {
         const candidate = path.resolve(process.cwd(), target);
         if (fs.existsSync(candidate)) {
@@ -30,4 +30,3 @@ export function registerPrint(program: Command) {
       process.stdout.write(contents);
     });
 }
-

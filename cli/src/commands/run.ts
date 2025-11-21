@@ -13,7 +13,7 @@ export function registerRun(program: Command) {
     .action(async (rawTarget: string, options: { project?: string }) => {
       let target = rawTarget;
       if (target === '.flow') {
-        target = 'voike-bible.flow';
+        target = 'voike.flow';
       }
 
       const ext = path.extname(target);
@@ -71,4 +71,3 @@ export function registerRun(program: Command) {
       }
     });
 }
-
