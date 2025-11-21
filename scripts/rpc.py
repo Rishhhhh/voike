@@ -45,7 +45,8 @@ load_local_env()
 DEFAULT_BASE_URL = os.environ.get("VOIKE_BASE_URL", "https://voike.supremeuf.com")
 DEFAULT_API_KEY = os.environ.get(
     "VOIKE_API_KEY",
-    "4cdef1e80151bc5684e1edb20e502033515c5144dbb6180b8f27cbd0e3883369",
+    # Playground project key on voike.supremeuf.com; matches .env.example VOIKE_API_KEY.
+    "13347abf76832fc15bece86f924035c37d7b99f15bc7563cbd2e5102067f7e11",
 )
 DEFAULT_ADMIN_TOKEN = os.environ.get("VOIKE_ADMIN_TOKEN") or os.environ.get("ADMIN_TOKEN")
 DEFAULT_ROUTING_DOMAIN = os.environ.get("VOIKE_ROUTING_DOMAIN", "api.voike.com")
