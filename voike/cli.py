@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from . import __version__
+
 
 CONFIG_DIR = Path.home() / ".voike"
 CONFIG_PATH = CONFIG_DIR / "config.json"
@@ -209,7 +211,41 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-  parser = argparse.ArgumentParser(prog="voike", description="VOIKE Python CLI")
+  description = (
+    "VOIKE CLI – talk to VOIKE Core/AI/FLOW over HTTP.\n\n"
+    "Env hints:\n"
+    "  VOIKE_BASE_URL              Base URL (default http://localhost:8080)\n"
+    "  VOIKE_API_KEY               Project API key (X-VOIKE-API-Key)\n"
+    "  VOIKE_ADMIN_TOKEN/ADMIN_TOKEN  Admin token for /admin/*\n\n"
+    "Quick commands:\n"
+    "  voike project create org name       Create project + API key\n"
+    "  voike flow run flows/voike-grid.flow  Plan + execute FLOW file\n"
+    "  voike run app.flow                  Run FLOW (shortcut)\n"
+    "  voike run app.py                    Run local Python script\n"
+  )
+
+  epilog = (
+    "FLOW quickstart:\n"
+    '  - Write a file ending in ".flow" (see flows/ examples).\n'
+    "  - Use `voike flow parse` to validate, then `voike flow run` to execute.\n"
+    "  - Plans and executions go through the same /flow/* APIs used in README.md.\n\n"
+    "Docs:\n"
+    "  README.md          – overview, modules, CLI map\n"
+    "  docs/api.md        – HTTP API surface\n"
+    "  flows/             – sample FLOW specs you can tweak\n"
+  )
+
+  parser = argparse.ArgumentParser(
+    prog="voike",
+    description=description,
+    epilog=epilog,
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+  )
+  parser.add_argument(
+    "--version",
+    action="version",
+    version=f"voike {__version__}",
+  )
   subparsers = parser.add_subparsers(dest="command")
 
   # flow ...
