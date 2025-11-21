@@ -247,6 +247,40 @@ def cmd_run(args: argparse.Namespace) -> None:
       raise SystemExit(completed.returncode)
     return
 
+  if path.suffix == ".c":
+    abs_path = path if path.is_file() else Path.cwd() / target
+    if not abs_path.is_file():
+      raise SystemExit(f"C file not found: {abs_path}")
+    binary = abs_path.with_suffix("")  # ./app for app.c
+    compile_cmd = ["gcc", str(abs_path), "-O2", "-o", str(binary)]
+    print(f"[voike] gcc compile: {' '.join(compile_cmd)}")
+    compiled = subprocess.run(compile_cmd, check=False)
+    if compiled.returncode != 0:
+      raise SystemExit(compiled.returncode)
+    run_cmd = [str(binary)]
+    print(f"[voike] run: {' '.join(run_cmd)}")
+    completed = subprocess.run(run_cmd, check=False)
+    if completed.returncode != 0:
+      raise SystemExit(completed.returncode)
+    return
+
+  if path.suffix == ".java":
+    abs_path = path if path.is_file() else Path.cwd() / target
+    if not abs_path.is_file():
+      raise SystemExit(f"Java file not found: {abs_path}")
+    class_name = abs_path.stem
+    compile_cmd = ["javac", str(abs_path)]
+    print(f"[voike] javac compile: {' '.join(compile_cmd)}")
+    compiled = subprocess.run(compile_cmd, check=False)
+    if compiled.returncode != 0:
+      raise SystemExit(compiled.returncode)
+    run_cmd = ["java", class_name]
+    print(f"[voike] run: {' '.join(run_cmd)}")
+    completed = subprocess.run(run_cmd, check=False)
+    if completed.returncode != 0:
+      raise SystemExit(completed.returncode)
+    return
+
   raise SystemExit("voike run currently supports .py and .flow files.")
 
 
@@ -294,14 +328,17 @@ def build_parser() -> argparse.ArgumentParser:
   description = (
     "VOIKE CLI – talk to VOIKE Core/AI/FLOW over HTTP.\n\n"
     "Env hints:\n"
-    "  VOIKE_BASE_URL              Base URL (default http://localhost:8080)\n"
-    "  VOIKE_API_KEY               Project API key (X-VOIKE-API-Key)\n"
+    "  VOIKE_BASE_URL                 Base URL (default http://localhost:8080)\n"
+    "  VOIKE_API_KEY                  Project API key (X-VOIKE-API-Key)\n"
     "  VOIKE_ADMIN_TOKEN/ADMIN_TOKEN  Admin token for /admin/*\n\n"
     "Quick commands:\n"
-    "  voike project create org name       Create project + API key\n"
-    "  voike flow run flows/voike-grid.flow  Plan + execute FLOW file\n"
-    "  voike run app.flow                  Run FLOW (shortcut)\n"
-    "  voike run app.py                    Run local Python script\n"
+    "  voike project create org name        Create project + API key\n"
+    "  voike flow demo                      Explore built-in FLOW examples\n"
+    "  voike flow run flows/voike-grid.flow Plan + execute FLOW file\n"
+    "  voike run app.flow                   Run FLOW (shortcut)\n"
+    "  voike run app.py                     Run local Python script\n"
+    "  voike run app.c                      Compile + run C (gcc required)\n"
+    "  voike run App.java                   Compile + run Java (javac/java required)\n"
   )
 
   epilog = (

@@ -1,0 +1,37 @@
+FLOW "C Playground – Compile & Run"
+
+INPUTS
+  text projectId
+  text sourcePath
+END INPUTS
+
+# This FLOW is a sketch of how VOIKE can compile and run
+# C programs inside a VVM/Docker environment. The APX_EXEC
+# ops act as placeholders for env/VVM-backed contracts.
+
+STEP compile =
+  APX_EXEC "c.compile"
+    WITH {
+      projectId = projectId,
+      sourcePath = sourcePath
+    }
+
+STEP run =
+  APX_EXEC "c.run"
+    WITH {
+      projectId = projectId,
+      vvmId = compile.vvmId
+    }
+
+STEP output =
+  OUTPUT_TEXT {
+    explanation = "C program executed via VOIKE C playground",
+    projectId = projectId,
+    sourcePath = sourcePath,
+    exitCode = run.exitCode,
+    stdout = run.stdout,
+    stderr = run.stderr
+  }
+
+END FLOW
+
