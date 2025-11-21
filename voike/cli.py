@@ -111,6 +111,7 @@ def cmd_flow_plan(args: argparse.Namespace) -> None:
 
 
 def _execute_flow_from_source(source: str, mode: str) -> Any:
+  print("[1/2] Planning FLOW...", file=sys.stderr, flush=True)
   plan = http_request(
     "POST",
     "/flow/plan",
@@ -119,11 +120,13 @@ def _execute_flow_from_source(source: str, mode: str) -> Any:
   plan_id = plan.get("id")
   if not plan_id:
     raise SystemExit(f"Unexpected /flow/plan response: {plan}")
+  print(f"[1/2] Planning FLOW... done (planId={plan_id})", file=sys.stderr, flush=True)
 
   cfg = load_config()
   body: Dict[str, Any] = {"planId": plan_id, "mode": mode}
   if cfg.get("projectId"):
     body["inputs"] = {"projectId": cfg["projectId"]}
+  print(f"[2/2] Executing FLOW (mode={mode})...", file=sys.stderr, flush=True)
   return http_request(
     "POST",
     "/flow/execute",

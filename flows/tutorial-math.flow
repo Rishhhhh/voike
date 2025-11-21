@@ -28,12 +28,7 @@ STEP await_job =
     }
 
 STEP output =
-  OUTPUT_TEXT {
-    explanation = "Fibonacci via VOIKE Grid",
-    fibIndex = fibIndex,
-    fibValue = await_job.result.fib,
-    jobId = submit_job.jobId,
-    status = await_job.status
-  }
+  OUTPUT_TEXT "fib(" + fibIndex + ") = " + await_job.result.fib +
+    " [jobId=" + submit_job.jobId + ", status=" + await_job.status + "]"
 
 END FLOW
