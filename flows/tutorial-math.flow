@@ -12,15 +12,15 @@ END INPUTS
 STEP submit_job =
   APX_EXEC "grid.submitFibSplit"
     WITH {
-      projectId = projectId,
-      n = fibIndex
+      "projectId": projectId,
+      "n": fibIndex
     }
 
 STEP await_job =
   APX_EXEC "grid.awaitJob"
     WITH {
-      projectId = projectId,
-      jobId = submit_job.jobId
+      "projectId": projectId,
+      "jobId": submit_job.jobId
     }
 
 STEP output =
@@ -33,4 +33,3 @@ STEP output =
   }
 
 END FLOW
-

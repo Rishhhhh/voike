@@ -12,15 +12,15 @@ END INPUTS
 STEP compile =
   APX_EXEC "c.compile"
     WITH {
-      projectId = projectId,
-      sourcePath = sourcePath
+      "projectId": projectId,
+      "sourcePath": sourcePath
     }
 
 STEP run =
   APX_EXEC "c.run"
     WITH {
-      projectId = projectId,
-      vvmId = compile.vvmId
+      "projectId": projectId,
+      "vvmId": compile.vvmId
     }
 
 STEP output =
@@ -34,4 +34,3 @@ STEP output =
   }
 
 END FLOW
-
