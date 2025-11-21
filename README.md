@@ -39,6 +39,13 @@ docker compose up -d --build
 ```
 That’s it. Every dependency (backend, Postgres, POP stack) builds inside Docker—no local `npm install`, no extra seeds, no manual scripts. As soon as the compose stack is up, `/` serves the docs landing page and `/info` exposes the same payload as JSON. Bring `.env` with you (or edit it in-place) and the exact same command works behind NAT, on laptops, bare metal, tunnels, static IPs, AWS, GCP—anywhere you have Docker and outbound internet.
 
+On Windows (PowerShell):
+```powershell
+git clone https://github.com/Rishhhhh/voike.git
+cd voike
+powershell -ExecutionPolicy Bypass -File scripts\run_voike_windows.ps1
+```
+
 > Want the full architecture narrative? Read `docs/whitepaper.md`. Need API-level detail? See `docs/api.md`.
 
 **Docs Map**
