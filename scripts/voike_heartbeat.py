@@ -20,14 +20,22 @@ import requests
 
 
 def load_local_env() -> None:
-    env_path = Path(__file__).with_name(".env")
-    if not env_path.exists():
+    """Load env vars from a nearby .env file, if present.
+
+    Mirrors the lookup logic in voike_regression.py so running this script from
+    the repo root automatically honors the project's .env.
+    """
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / ".env",
+        script_dir.parent / ".env",
+    ]
+    env_path = next((path for path in candidates if path.exists()), None)
+    if not env_path:
         return
     for raw_line in env_path.read_text().splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
+        if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         os.environ.setdefault(key.strip(), value.strip())
