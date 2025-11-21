@@ -1,0 +1,15 @@
+[package]
+name = "uor-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["VOIKE Contributors"]
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
+warp = "0.3"
+wasmtime = "15.0"
+sysinfo = { version = "0.30", default-features = false, features = ["system"] }
+chrono = { version = "0.4", features = ["serde"] }

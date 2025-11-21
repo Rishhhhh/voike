@@ -1,0 +1,49 @@
+FLOW "Agentic Hybrid Query"
+
+INPUTS
+  text intent
+  json options optional
+END INPUTS
+
+STEP classify =
+  APX_EXEC "hybrid.detectMode"
+    WITH {
+      "intent": intent,
+      "mode": options.mode
+    }
+
+STEP plan =
+  APX_EXEC "hybrid.buildPlan"
+    WITH {
+      "mode": classify.mode,
+      "sql": options.sql,
+      "semanticText": options.semanticText,
+      "graph": options.graph
+    }
+
+STEP execute =
+  APX_EXEC "hybrid.executePlan"
+    WITH {
+      "plan": plan,
+      "projectId": options.projectId
+    }
+
+STEP fuse =
+  APX_EXEC "hybrid.fuse"
+    WITH {
+      "plan": plan,
+      "result": execute.result
+    }
+
+STEP record =
+  APX_EXEC "hybrid.logProfile"
+    WITH {
+      "plan": plan,
+      "result": fuse
+    }
+
+OUTPUT plan
+OUTPUT fuse
+OUTPUT record
+
+END FLOW

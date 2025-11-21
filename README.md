@@ -51,6 +51,12 @@ That’s it. Every dependency (backend, Postgres, POP stack) builds inside Docke
 | **Phase 6** | Deployment tooling, Helm/Compose templates, POP verification scripts | README §2.9, `docs/deployment_*`, `scripts/verify_pop.py`, `deploy/` |
 | **Phase 7** | Multi-platform adapters (Firebase/Supabase, Flask, React, Rust, Postgres) | README §2.10, `adapters/README.md`, `docs/migration_guides.md` |
 | **Phase 8** | Resilience tooling (capsules, ledger replay/anchor, offline sync, chaos playbooks) | README §2.11, `docs/resilience_playbooks.md`, `scripts/ledger_replay.py`, `scripts/offline_sync.py` |
+| **Module 4** | ARN-DNS predictive routing + admin telemetry surfaces | README §§6.1, 6.5, `docs/voike-agents-module4.md` |
+| **Module 5** | Hypermesh networking + Ultra-Optimized Runtime | README §§6.6, 12, `docs/voike-agents-module5.md`, `services/uor-engine/` |
+| **Module 6** | Global trust, PQC, and security infrastructure | README §§6.7, 13, `docs/voike-agents-module6.md`, `/trust/*` APIs |
+| **Module 7** | Universal ingestion + Omni-File DB + Antigravity delta | README §§6.8, 14, `docs/voike-agents-module7.md`, `/ingestion/*`, `flows/omni-ingest.flow` |
+| **Module 8** | Agentic hybrid querying + NL reasoning | README §§6.9, 15, `docs/voike-agents-module8.md`, `/hybrid/*`, `flows/hybrid-query.flow` |
+| **Module 9** | Agentic real-time streams + event processing | README §§6.10, 16, `docs/voike-agents-module9.md`, `/streams/*`, `flows/stream-processing.flow` |
 | **White Paper** | Full narrative across Phases 1–8 | `docs/whitepaper.md` |
 
 ### 2.1.1 Shared Postgres (multi-node)
@@ -147,6 +153,8 @@ The backend automatically hydrates from Genesis (`GENESIS_BOOTSTRAP=1`), adverti
 - `.github/workflows/agentic-flow.yml` invokes `/flow/plan` + `/flow/execute` using the Playground API. Configure `VOIKE_API_URL`, `VOIKE_API_KEY`, and `VOIKE_PROJECT_ID` secrets and the workflow prints the Product agent summary on every push/PR.
 - Tester parses changed `.flow` files through the FLOW compiler and ensures referenced files exist; Infra emits deployment/capsule commands so demos stay reproducible with a single `docker compose up -d --build`.
 - See `docs/phase5_agents.md` for the spec template, curl examples, and Playground tips.
+- The new Agent Registry endpoints (`POST /agents`, `GET /agents`, `GET /agents/:id`, `GET /agents/classes`) let you persist Module 2 agent definitions per project. `GET /agents/classes` returns the canonical capabilities/tools for `system`, `kernel`, `network`, `database`, `file`, `security`, `developer`, and `user` classes so Codex/LLMs can auto-fill registry entries.
+- Module 3 runtime brings `POST /agents/:id/run` (plus `GET /agents/tools`) so registered agents can invoke canonical tools (`log.emit`, `ai.ask`, `flow.execute`, `grid.submit`) through the Supervisor/Router/Worker loop described in `docs/voike-agents-module3.md`.
 
 ### 2.9 Phase 6 – Deployment Tooling & CI/CD (Playground or DIY)
 
@@ -273,6 +281,13 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
 - **Safe & stable**: ops are versioned; plans only change when you opt in.
 - **Optimizable**: plan graph metadata allows IRX/DAI/AI Fabric to schedule and improve workflows.
 
+### Dynamic language runtimes (VVM + containers)
+FLOW does not require the host OS to ship every SDK. Instead:
+- Build a thin container image per runtime (e.g., `mcr.microsoft.com/dotnet/sdk:8.0`) and register it as an env descriptor (`voike env add examples/vvm/dotnet-env.yaml`). The backend already tunnels descriptors through Docker on macOS + Linux, so the same image runs everywhere.
+- Create a VVM descriptor that references the env by name/ID and encodes the command to run (`examples/vvm/dotnet-vvm.json`). The descriptor lists the project files/artifacts VOIKE should inject into the container.
+- When FLOW (or `/vvm/:id/build`) needs that runtime, the grid job pulls the declared image, executes the command, and returns logs/artifacts—no host-level dotnet/python/java installs are required.
+- Repeat for Python, Java, npm, etc. by swapping the base image / command; FLOW + VVM keep the contracts consistent while Docker guarantees parity between laptop + `voike.supremeuf.com`.
+
 ## 7. CLI, Scripts & VPKG
 
 - `npm run lint` – TypeScript type-check (tsc --noEmit).
@@ -298,11 +313,17 @@ Use chat data to discover recurring patterns; AI already uses it to suggest Hype
   – replay append-only ledger entries locally and verify virtual energy changes before rollbacks.
 - `python scripts/offline_sync.py --interval 0 --capsules`
   – prefetch ledger/capsule data into a local cache so apps keep running when cloud dependencies go dark.
+- `python scripts/rpc.py --grid 5000 --show-segments` – print mesh/cluster summaries, routing metadata, and (optionally) run a split Fibonacci grid job to confirm segments are distributed across nodes.
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 
 ## 6.1 SNRL + V-DNS (Phase 1 foundation)
 - `/snrl/resolve` returns a signed endpoint recommendation for any domain using the new FLOW plan `flows/snrl-semantic.flow`. The resolver runs through FLOW → APX → `SnrlService`, so you can iterate on the plan without redeploying binaries.
 - `config/snrl-endpoints.json` seeds the initial POP metadata. Update it or feed from MCP to reflect real POPs.
+- Module 4 exposes predictive and trust data through admin endpoints:
+  - `GET /snrl/predictions` – inspect the predictive cache (domain, region, top candidate, confidence) so you can verify Module 4’s zero-propagation routing.
+  - `GET /snrl/insights` – aggregates (top domains, regional load, trust anchor) from the semantic resolver telemetry.
+  - `GET /snrl/failures` – returns failure counters + recent failure log entries to confirm auto-penalties and recovery flows.
+- The trust anchor + failure counters persist in `config/snrl-state.json`, so signatures remain stable across restarts (foundation for the hybrid trust chain).
 - `node scripts/set_shared_db.js --url <postgres-url>` configures both Mac + Linux nodes to share a single Postgres control plane so mesh state, grid jobs, and SNRL flows stay in sync.
 
 Example:
@@ -368,6 +389,43 @@ These services now live inside the repo so AI agents or ops engineers can build/
 - `GENESIS_REGISTER=1` — after boot, VOIKE auto-registers the node (SNRL endpoint + A/AAAA/NS records) with Genesis using `VOIKE_PUBLIC_*` envs (hostname, IP, region, capabilities, TTLs). Every `docker compose up -d --build` run now self-registers the host with `voike.supremeuf.com` so discovery never needs manual steps.
 - VDNS containers poll `/vdns/zones/:id/export` on an interval (`VDNS_REFRESH_SECONDS`, default 60s) and hot-reload Knot/NSD whenever the zone changes. No manual restarts are required when `/vdns/records` updates fire from Genesis.
 - Compose wiring ships all required env defaults (`GENESIS_*`, `VOIKE_PUBLIC_*`, `SNRL_*`, `VDNS_*`), so bringing up a fresh server only requires editing `.env` and running `docker compose up -d --build`. The backend, resolvers, POPs, and registration loop are all included.
+
+## 6.5 Module 4 – AI Edge Resolver Sample
+- `services/snrl-ai-edge/` adds a FastAPI + dnslib reference implementation for the ARN-DNS edge nodes. It embeds requested domains, runs similarity search via Qdrant local mode, and answers UDP DNS queries on `EDGE_DNS_PORT` (default `1053`).
+- Every lookup first checks the in-memory TTL cache, then the semantic store, then finally `/snrl/resolve`. Predicted hits never leave the POP and still include the Module 4 signature/trust anchor metadata.
+- Control plane endpoints (`GET /`, `/metrics`, `/cache`, `/predictions`) expose the same predictive cache information surfaced centrally via `/snrl/predictions` and `/snrl/insights` so ops can diff edge vs. core behavior.
+- Configure via env vars (`VOIKE_API_KEY`, `VOIKE_API_URL`, `EDGE_REGION`, `EDGE_CAPABILITIES`, `EDGE_SEMANTIC_THRESHOLD`, etc.) and run locally with `uvicorn app:app --host 0.0.0.0 --port 8000` or via Docker (`docker build -t voike/snrl-ai-edge services/snrl-ai-edge`).
+- Use the emitted metrics + the persisted `config/snrl-state.json` trust anchor to confirm AI nodes stay in lockstep with the canonical predictive cache even after restarts.
+
+## 6.6 Module 5 – Hypermesh + UOR Engine
+- `src/hypermesh/` introduces the HypermeshService: it samples local CPU/RAM, computes PerfWatch/MeshSurgeon/HyperRoute advisories, persists them in Postgres, and exposes `/hypermesh/status`, `/hypermesh/routes`, `/hypermesh/events`, `/hypermesh/agents` for dashboards + FLOW plans.
+- PerfWatch keeps the runtime tickless (CPU sleep states, INT4 compression hints, memory defrag recommendations). MeshSurgeon records self-healing actions/predicted spawns; HyperRoute emits low-latency route tables ranked by bandwidth + semantic affinity.
+- Metrics stream into `hypermesh_nodes` + `hypermesh_events` tables and reuse the `config/snrl-state.json` trust anchor so Module 4 + 5 data share provenance.
+- `services/uor-engine/` ships a Rust/Tokio microkernel sample (WASM loader stub, warp `/status` endpoint) so POPs or Raspberry Pi targets can host the Ultra-Optimized Runtime with a <30 MB idle footprint.
+
+## 6.7 Module 6 – Global Trust, PQC & Security (GTPSI)
+- `src/trust/` adds the TrustService: it rotates simulated Kyber/Dilithium-style key pairs, records Distributed Trust Chain (DTC) anchors in Postgres, and exposes `/trust/status`, `/trust/anchors`, `/trust/events`, `/trust/sessions`, `/trust/pta` so ops + FLOW can verify provenance in real time.
+- Predictive Threat Analyzer (PTA-Agent) runs alongside Hypermesh every ~8 s, assigning anomaly scores to mesh peers (latency drift, handshake jitter). Scores <0.65 emit `trust_events` that MeshSurgeon reads before spawning replicas.
+- PQC + DTC state mirrors the Module 4 trust anchor (`config/snrl-state.json`) so signatures stay stable across SNRL/Hypermesh/Trust layers. Idle RAM stays <35 MB by cold-loading PQC modules until anomalies fire.
+- Safe-optimization contract: `/trust/status.policy.safeOps` (mirrored in README §13) tells engineers what can be tuned (SIMD, compression, cold-start improvements) versus banned actions (skipping PQC verification, altering node IDs, disabling anomaly detection). Always follow those guardrails.
+
+## 6.8 Module 7 – Universal Ingestion & Omni-File DB (UI-OFDB)
+- `src/ingestion/service.ts` + `src/uie/index.ts` now log every upload (source metadata, schema preview, transformation plan, embedding posture) so `/ingestion/jobs`, `/ingestion/lineage`, `/ingestion/schema/infer`, and `/ingestion/transform/plan` expose the full ingestion story per project.
+- File Agents stream parse CSV/JSON/PKL/etc., Schema Agents infer types automatically, Transformation Agents compile plans (flatten, drop nulls, array-to-JSON), and Embedding Agents decide when to quantize text—each step is documented in the lineage tables.
+- `flows/omni-ingest.flow` captures the detect → parse → schema → plan → embed → store → lineage loop so FLOW/AgentOps can orchestrate ingestion end-to-end or slot custom adapters.
+- Competitive note: unlike Google Antigravity (IDE-focused, artifacts, heavy Gemini 3 Pro reliance), VOIKE ingests arbitrary data with lineage, PQC signing, SQL/vector/graph storage, and hybrid queries. See README §14 + `docs/voike-agents-module7.md` for the full delta and safe-optimization guidance.
+
+## 6.9 Module 8 – Agentic Hybrid Querying & Reasoning
+- `src/hybrid/queryService.ts` + `/hybrid/*` APIs let agents or humans send SQL/vector/graph/NL intents and receive a plan/result bundle. Plans are cached (30s TTL), results fused, and latency stats recorded for dashboards.
+- `HybridQueryService` decides whether to route to SQL (`ingest_jobs` sample), vector embeddings, or graph traversals. NL intents default to hybrid plans (vector + SQL + fusion) unless keywords (“graph”, “connection”, “similar”) force another path.
+- `/hybrid/plans`, `/hybrid/cache`, `/hybrid/profiles` expose Module 8 dashboards so Module 5’s UI + FLOW agents can inspect cost, cache hits, and profiling data. Everything is powered by Kernel-9 heuristics + VDB’s new `queryGraph` helper.
+- `flows/hybrid-query.flow` documents the Query Parsing Agent → Optimizer → Execution → Fusion pipeline described in Module 8, ready for CI automation or `voike` CLI support soon.
+
+## 6.10 Module 9 – Agentic Real-Time Streams & Events (ARSEP)
+- `src/streams/service.ts` introduces `StreamIngestionService`: register streams per project, append events, capture checkpoints, and maintain lightweight latency/throughput profiles. Exposed via `/streams`, `/streams/:id/events`, `/streams/:id/checkpoints`, `/streams/:id/profile` so agents/dashboards can observe event health.
+- Events automatically feed the profile table (latency + throughput) so Module 8 dashboards & Module 5 telemetry can react; each append publishes an in-process event emitter for future AEPs.
+- `flows/stream-processing.flow` mirrors the SIA → ERK → AEP → checkpoint loop described in Module 9 and can be embedded in CI or orchestrator tasks.
+- Competitive angle: Supabase/TigerData lack agentic streaming; Antigravity focuses on IDE automation. ARSEP delivers multi-source ingestion (>1M events/sec potential), agentic routing, checkpoints, and hybrid query bridge all under the same VOIKE API key.
 
 ### LLM configuration
 - Set `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com`), and `OPENAI_MODEL` (`gpt-5.1` by default) in `.env` to enable real GPT-backed flows (`/agents/fast-answer`, `flows/*` with `RUN AGENT`).
@@ -438,3 +496,57 @@ Upcoming phases will attach Capsules to each task, wire CLI helpers (`voike task
 Remember the mantra for VOIKE 3.0:
 
 > *The whole development, deployment, evolution of VOIKE runs **through** VOIKE, driven by FLOW, VPKGs, and agents. Humans steer; VOIKE grinds.*
+
+## 12. Module 5 – Hypermesh Networking & UOR Engine
+
+- **HypermeshService (`src/hypermesh`)** – publishes the new Module 5 APIs. PerfWatch samples CPU/RAM + quantization ratios; MeshSurgeon writes to `hypermesh_events`; HyperRoute refreshes the route table every ~5s.
+- **APIs** – `GET /hypermesh/status`, `/hypermesh/routes`, `/hypermesh/events`, `/hypermesh/agents` share telemetry so CI/ops dashboards can confirm idle footprint (<30 MB) and see predictive spawn guidance. All endpoints require the admin token.
+- **Database tables** – `hypermesh_nodes` stores stats per node, `hypermesh_events` logs warnings/self-heal actions. Both tables sync to Genesis + the Module 4 trust anchor for replay.
+- **UOR Engine (services/uor-engine)** – Rust + Tokio microservice that demonstrates the ultra-optimized runtime concepts: tickless scheduling, WASM loader stub, LMDB-ready storage, and `/status` metrics for POP deployments.
+- **FLOW hooks (next)** – Module 5 agents expose metadata so FLOW/GRID planners can bias jobs toward the healthiest micro-nodes. See `docs/voike-agents-module5.md` for the spec and roadmap.
+
+## 13. Module 6 – Global Trust, PQC & Safe Optimization Rules
+
+- **Admin APIs**: `GET /trust/status` (full PQC/DTC/PTA snapshot), `/trust/anchors` (immutable key history), `/trust/events` (security log), `/trust/sessions` (current node-to-node tunnels), `/trust/pta` (anomaly predictions). They require the admin token and never expose private keys.
+- **Allowed performance tweaks (✅)**: enable SIMD/WASM acceleration, compress telemetry, cold-load PQC modules, adjust Hypermesh sampling intervals, add read-only observability. These paths are enumerated in `/trust/status.policy.safeOps.allowed`.
+- **Ask before changing (⚠️)**: PQC parameter sets, DTC thresholds, mesh replication factor, PTA scoring weights. The policy blob marks them as `requiresApproval`.
+- **Never do (🚫)**: bypass PQC verification, modify node IDs, disable anomaly detection, store secrets in git, or ship unsigned agents. Policy lists these actions under `forbidden`.
+- **Workflow**: PerfWatch + PTA raise `trust_events` whenever CPU/RAM spikes threaten PQC responsiveness. MeshSurgeon consumes those events to spawn replicas, HyperRoute avoids unsafe nodes, and Module 4’s trust anchor keeps signatures consistent.
+
+## 14. Module 7 – VOIKE vs Google Antigravity
+- **Antigravity snapshot**: Google’s Gemini 3-powered IDE lets agents control browser/terminal/editor and emit artifacts (InfoWorld, Times of India, The Verge). Reddit reports highlight destructive edits + privacy worries in the preview build.
+- **VOIKE advantage**: UI-OFDB ingests arbitrary files with streaming parsers, auto schema inference, transformation planning, embedding, and hybrid storage (SQL + vector + graph). Lineage + PQC logging mean every ingestion is reproducible and signed.
+- **Artifact-style insight**: `/ingestion/lineage` surfaces similar “artifact” proofs (plan arrays, schema preview, embedding metadata) for auditors and dashboard builders.
+- **Where we learn**: Antigravity’s Manager/Artifact UX inspires upcoming ingestion dashboards + feedback loops so humans can approve schema/transform plans quickly.
+
+## 15. Module 8 – Hybrid Query vs Antigravity/Supabase/TigerData
+
+| Feature | VOIKE Module 8 | Google Antigravity | Supabase | TigerData |
+| --- | --- | --- | --- | --- |
+| Multi-store query | ✅ SQL + vector + graph | ❌ (IDE) | ❌ | ❌ |
+| NL → hybrid plan | ✅ heuristic + optional LLM | ✅ IDE, heavier token use | ❌ | ❌ |
+| Caching/profiles | ✅ plan/result/perf caches | ❌ | Partial | ❌ |
+| Token efficiency | ✅ heuristics before LLM | ❌ heavy Gemini calls | ❌ | ❌ |
+| Security lineage | ✅ inherits Modules 6–7 | ❌ preview | ✅ | ✅ |
+
+- `/hybrid/query` returns `{ plan, result, cacheHit }` so agents or humans can inspect the plan before execution. Plans include vector/SQL/graph steps plus cost estimates.
+- `/hybrid/plans`, `/hybrid/cache`, `/hybrid/profiles` act like Antigravity “artifacts” but for query plans; they expose caches + latency profiles without exposing private data.
+- The Query Parsing Agent uses heuristics (keywords, provided SQL/graph payloads) to minimize LLM/token usage; only ambiguous NL intents need LLM escalation.
+- Future work: plug Module 5 dashboards into these endpoints for live query inspectors, and let FLOW agents re-run cached plans when ingestion updates land.
+
+## 16. Module 9 – Streams vs Supabase/TigerData/Antigravity
+
+| Feature | VOIKE Module 9 | Supabase | TigerData | Google Antigravity |
+| --- | --- | --- | --- | --- |
+| Real-time stream ingestion | ✅ multi-source, checkpointed | ❌ | Partial | Partial |
+| Agentic routing/processors | ✅ planned via Flow & emitters | ❌ | ❌ | ❌ |
+| Hybrid query bridge | ✅ streams → Module 8 caches | ❌ | ❌ | ❌ |
+| Checkpoints + profiles | ✅ `/streams/:id/checkpoints|profile` | Partial | Partial | ❌ |
+| Token/CPU efficiency | ✅ event heuristics before LLM | ❌ | ❌ | ❌ |
+
+- `/streams/:id/events` keeps raw payloads immutable while agentic processors emit derived data into Module 7 tables.
+- `/streams/:id/profile` provides a Quick-look gauge (latency, throughput) for dashboards; Module 5’s Hypermesh UI can fetch it alongside `/hypermesh/status`.
+- Checkpoints ensure deterministic replay + backpressure; future Flow ops can resume streams from the last processed sequence.
+
+## 17. Module 10 – Production & Deployment Readiness (Preview)
+- Final module (optional) will bundle hardened deployment tunings: container/K8s manifests, secrets management, CI/CD guardrails, scaling policies, DR/backups, and developer onboarding runbooks. The architecture groundwork is complete in Modules 1–9; Module 10 will focus on operational polish.

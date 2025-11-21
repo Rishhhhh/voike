@@ -4,10 +4,11 @@ import { logger, metrics } from '@telemetry/index';
 import { DEFAULT_PROJECT_ID } from '@auth/index';
 
 export type VDBQuery = {
-  kind: 'sql' | 'semantic' | 'hybrid';
+  kind: 'sql' | 'semantic' | 'hybrid' | 'graph';
   sql?: string;
   semanticText?: string;
   filters?: Record<string, unknown>;
+  graph?: { fromId?: string; depth?: number };
   target?:
     | 'sql'
     | 'doc'
@@ -129,6 +130,25 @@ export class VDBClient {
     };
   }
 
+  async queryGraph(fromId?: string, depth = 2): Promise<VDBResult> {
+    const start = Date.now();
+    const whereClauses: string[] = [];
+    const params: Array<string | number> = [];
+    if (fromId) {
+      whereClauses.push('(from_id = $1 OR to_id = $1)');
+      params.push(fromId);
+    }
+    const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const sql = `SELECT from_id, to_id, type, weight FROM graph_edges ${where} ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+    params.push(Math.max(10, depth * 25));
+    const { rows } = await this.pool.query(sql, params);
+    const latency = Date.now() - start;
+    return {
+      rows: rows.map((row) => ({ from: row.from_id, to: row.to_id, type: row.type, weight: row.weight })),
+      meta: { engine: 'graph', latencyMs: latency },
+    };
+  }
+
   async execute(query: VDBQuery): Promise<VDBResult> {
     switch (query.kind) {
       case 'sql':
@@ -137,6 +157,8 @@ export class VDBClient {
         return this.querySemantic(query.semanticText || '', query.filters);
       case 'hybrid':
         return this.queryHybrid(query);
+      case 'graph':
+        return this.queryGraph(query.graph?.fromId, query.graph?.depth);
       default:
         throw new Error('Unsupported query kind');
     }

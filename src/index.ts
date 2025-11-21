@@ -6,6 +6,8 @@ import { buildServer } from '@api/http';
 import { createPool, VDBClient } from '@vdb/index';
 import { ensureLedgerTables } from '@ledger/index';
 import { UniversalIngestionEngine } from '@uie/index';
+import { OmniIngestionService } from '@ingestion/service';
+import { StreamIngestionService } from '@streams/service';
 import { createDefaultToolRegistry } from '@mcp/index';
 import { Kernel9 } from '@kernel9/index';
 import { DAIEngine } from '@semantic/dai';
@@ -14,11 +16,14 @@ import { ensureAuthTables } from '@auth/index';
 import { BlobGridService } from '@blobgrid/index';
 import { EdgeService } from '@edge/index';
 import { IRXService } from '@irx/index';
-import { GridService } from '@grid/index';
+import { GridService, GridJobType } from '@grid/index';
 import { PlaygroundService } from '@playground/index';
 import { CapsuleService } from '@capsules/index';
 import { GenesisService } from '@genesis/index';
 import { MeshService } from '@mesh/index';
+import { HypermeshService } from '@hypermesh/index';
+import { TrustService } from '@trust/index';
+import { HybridQueryService } from '@hybrid/queryService';
 import { ChaosEngine, OpsService } from '@ops/index';
 import { VvmService } from '@vvm/index';
 import { ApixService } from '@apix/index';
@@ -26,11 +31,13 @@ import { InfinityService } from '@infinity/index';
 import { FederationService } from '@federation/index';
 import { AiService } from '@ai/index';
 import { ChatService } from '@chat/index';
-import { FlowService } from './flow/service';
+import { FlowService, FlowExecutionMode } from './flow/service';
 import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { VpkgService } from '@vpkg/service';
 import { AgentOpsService } from '@agents/service';
+import { AgentRegistryService } from '@agents/registry';
+import { AgentRuntimeService } from '@agents/runtime';
 import { GptClient } from '@agents/gpt';
 import { OnboardService } from '@onboard/service';
 import { SnrlService } from './snrl/service';
@@ -56,7 +63,13 @@ const bootstrap = async () => {
   await vdb.ensureBaseSchema();
   await ensureAuthTables(pool, config.auth.playgroundKey);
   await ensureLedgerTables(pool);
-  const uie = new UniversalIngestionEngine(pool, vdb);
+  const ingestion = new OmniIngestionService(pool);
+  await ingestion.ensureTables();
+  const streams = new StreamIngestionService(pool);
+  await streams.ensureTables();
+  const uie = new UniversalIngestionEngine(pool, vdb, ingestion);
+  const hybridQuery = new HybridQueryService(vdb, pool);
+  await hybridQuery.ensureTables();
   const kernel9 = new Kernel9(pool);
   const dai = new DAIEngine(pool, kernel9);
   await dai.ensureTable();
@@ -79,6 +92,11 @@ const bootstrap = async () => {
   await capsules.ensureTables();
   const mesh = new MeshService(pool, genesis, identity);
   await mesh.start();
+  const hypermesh = new HypermeshService(pool, mesh);
+  await hypermesh.ensureTables();
+  hypermesh.start();
+  const trust = new TrustService(pool, mesh);
+  await trust.start();
   const ops = new OpsService(pool);
   await ops.ensureTables();
   ops.startAutopilot();
@@ -108,6 +126,9 @@ const bootstrap = async () => {
   await chat.ensureTables();
   const orchestrator = new OrchestratorService(pool);
   await orchestrator.ensureTables();
+  const agentRegistry = new AgentRegistryService(pool);
+  await agentRegistry.ensureTables();
+  const agentRuntime = new AgentRuntimeService({ registry: agentRegistry, logger });
   const gptClient = config.ai.openai
     ? new GptClient({
         apiKey: config.ai.openai.apiKey,
@@ -225,6 +246,67 @@ const bootstrap = async () => {
         default:
           throw new Error(`Unknown APX_EXEC target ${target}`);
       }
+    },
+  });
+  agentRuntime.registerTool({
+    name: 'log.emit',
+    capability: 'log.emit',
+    description: 'Write a structured log entry through the runtime supervisor.',
+    handler: async ({ agent, payload }) => {
+      const message = String(payload.message ?? 'log emit');
+      logger.info(`[@${agent.name}] ${message}`);
+      return { ok: true, message };
+    },
+  });
+  agentRuntime.registerTool({
+    name: 'ai.ask',
+    capability: 'ai.ask',
+    description: 'Query the Knowledge Fabric summaries for the current project.',
+    handler: async ({ projectId, payload }) => {
+      const question = String(payload.question || 'What changed?');
+      return ai.ask(projectId, question);
+    },
+  });
+  agentRuntime.registerTool({
+    name: 'flow.execute',
+    capability: 'flow.execute',
+    description: 'Execute a FLOW plan under the current project context.',
+    handler: async ({ projectId, payload }) => {
+      const planId = String(payload.planId || '');
+      if (!planId) {
+        throw new Error('planId is required for flow.execute');
+      }
+      const inputs = (payload.inputs as Record<string, unknown>) || {};
+      const mode = (payload.mode as FlowExecutionMode) || 'auto';
+      return flow.execute(planId, projectId, inputs, mode);
+    },
+  });
+  agentRuntime.registerTool({
+    name: 'grid.submit',
+    capability: 'grid.submit',
+    description: 'Submit a Grid job and optionally await completion.',
+    handler: async ({ projectId, payload }) => {
+      const type = (payload.type as GridJobType) || 'custom';
+      const params = (payload.params as Record<string, unknown>) || {};
+      const awaitResult = Boolean(payload.await);
+      const jobId = await grid.submitJob({
+        projectId,
+        type,
+        params,
+        inputRefs: (payload.inputRefs as Record<string, unknown>) || {},
+      });
+      if (awaitResult) {
+        const job = await grid.waitForJob(jobId, {
+          intervalMs: Number(payload.intervalMs) || undefined,
+          timeoutMs: Number(payload.timeoutMs) || undefined,
+        });
+        return {
+          jobId,
+          status: job.status,
+          result: job.result,
+        };
+      }
+      return { jobId };
     },
   });
   const snrlController = new SnrlController(flow, snrl);
@@ -363,8 +445,15 @@ const bootstrap = async () => {
     vpkg,
     orchestrator,
     agentOps,
+    agentRuntime,
+    agentRegistry,
     snrl: snrlController,
     snrlService: snrl,
+    hypermesh,
+    trust,
+    ingestion,
+    streams,
+    hybridQuery,
     vdns,
   });
   grid.startScheduler();

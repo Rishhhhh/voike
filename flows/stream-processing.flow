@@ -1,0 +1,34 @@
+FLOW "Stream Processing"
+
+INPUTS
+  text streamId
+  json eventPayload
+  number checkpointPosition optional
+END INPUTS
+
+STEP append =
+  APX_EXEC "streams.append"
+    WITH {
+      "streamId": streamId,
+      "payload": eventPayload
+    }
+
+STEP checkpoint =
+  APX_EXEC "streams.checkpoint"
+    WITH {
+      "streamId": streamId,
+      "position": checkpointPosition || append.sequence,
+      "metadata": { "reason": "flow" }
+    }
+
+STEP profile =
+  APX_EXEC "streams.profile"
+    WITH {
+      "streamId": streamId
+    }
+
+OUTPUT append
+OUTPUT checkpoint
+OUTPUT profile
+
+END FLOW

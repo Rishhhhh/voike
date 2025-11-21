@@ -1,0 +1,22 @@
+{
+  "name": "dotnet-flow-runner",
+  "version": 1,
+  "entry": {
+    "runtime": "dotnet8",
+    "command": "dotnet run --project src/FlowDemo.csproj",
+    "workingDir": "workspace",
+    "artifacts": [
+      { "type": "dir", "path": "src" },
+      { "type": "file", "path": "FlowDemo.csproj" }
+    ],
+    "outputs": [
+      { "name": "stdout", "type": "text" },
+      { "name": "artifacts", "type": "blob[]", "optional": true }
+    ]
+  },
+  "envName": "dotnet-sdk-8",
+  "metadata": {
+    "description": "Sample VVM descriptor that executes a C# FLOW adapter demo via dotnet run.",
+    "tags": ["sample", "dotnet", "flow"]
+  }
+}

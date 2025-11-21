@@ -1,0 +1,64 @@
+FLOW "Omni File Ingestion"
+
+INPUTS
+  text sourcePath
+  text projectId
+  json hints optional
+END INPUTS
+
+STEP detect =
+  APX_EXEC "ingestion.detectFormat"
+    WITH {
+      "source": sourcePath,
+      "hints": hints
+    }
+
+STEP parse =
+  APX_EXEC "ingestion.parse"
+    WITH {
+      "source": sourcePath,
+      "format": detect.format,
+      "projectId": projectId
+    }
+
+STEP schema =
+  APX_EXEC "ingestion.inferSchema"
+    WITH {
+      "rows": parse.sample,
+      "logicalName": detect.logicalName
+    }
+
+STEP plan =
+  APX_EXEC "ingestion.planTransform"
+    WITH {
+      "sample": parse.sample,
+      "schema": schema
+    }
+
+STEP embed =
+  APX_EXEC "ingestion.embed"
+    WITH {
+      "rows": parse.sample,
+      "plan": plan
+    }
+
+STEP store =
+  APX_EXEC "ingestion.materialize"
+    WITH {
+      "rows": parse.rows,
+      "schema": schema,
+      "plan": plan,
+      "projectId": projectId
+    }
+
+STEP lineage =
+  APX_EXEC "ingestion.logLineage"
+    WITH {
+      "jobId": store.jobId,
+      "projectId": projectId,
+      "schema": schema,
+      "plan": plan,
+      "embedding": embed.summary
+    }
+
+END FLOW

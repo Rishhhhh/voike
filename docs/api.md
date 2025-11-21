@@ -50,6 +50,11 @@ Approving a waitlist entry marks the `users` row as `approved` but **does not** 
 - `POST /ingest/file` (multipart)  
   Fields: `file`, optional `logicalName`. Response `{ jobId, table }`.
 - `GET /ingest/{jobId}` → Poll job summary/status.
+- `GET /ingestion/jobs?limit=` – list recent jobs + summaries.
+- `GET /ingestion/jobs/{id}` – identical to `/ingest/{id}` but under the Module 7 namespace.
+- `GET /ingestion/lineage?limit=` – lineage records (schema preview, transformation plan, embedding metadata) for the project.
+- `POST /ingestion/schema/infer` – body `{ rows: [ {…} ], logicalName? }` → schema inference preview.
+- `POST /ingestion/transform/plan` – body `{ sample: [...], hints? }` → suggested transformation steps (`flatten_nested`, `drop_nulls`, `arrays_to_json`, …).
 
 ### 2.2 Query & Hybrid Reasoning
 `POST /query`
@@ -273,6 +278,7 @@ See `flow/docs/VPKG-spec.md` for bundle format details.
 - `GET /env/descriptors` / `GET /env/descriptors/{envId}` – list or inspect descriptors.
 - `POST /env/descriptors/{envId}/resolve` – returns the runner plan (mode, command, env vars) tuned to the node’s `VOIKE_NODE_MODE` (`docker` or `baremetal`).
 - Descriptors are re-used by VVM builds/executions and surfaced via the CLI (`voike env add/list`).
+- Dynamic runtime pattern: ship the SDK in a container image, register it once, then point VVM descriptors at the env. See `examples/vvm/dotnet-env.yaml` / `examples/vvm/dotnet-vvm.json` for a .NET 8 template; swap the image/command for Python, Java, npm, etc. and VOIKE automatically runs them via Docker on every node.
 
 ### 2.22 Orchestrator (VOIKE 3.0 preview)
 - `POST /orchestrator/projects` – register a project (core/app/lib) so VOIKE can orchestrate its lifecycle.
@@ -285,11 +291,22 @@ See `flow/docs/VPKG-spec.md` for bundle format details.
 
 These endpoints back the forthcoming `voike task` / `voike evolve` CLI experience and lay the groundwork for fully agentic evolution.
 
-### 2.23 SNRL Resolve
+### 2.23 Agent Registry (Module 2)
+- `POST /agents` – register a canonical Module 2 agent for the current project. Pass `{ name, class, capabilities?, tools?, memory?, goalStack?, state?, metadata? }`. When `capabilities` or `tools` are omitted, VOIKE fills them from the class defaults (`system`, `kernel`, `network`, `database`, `file`, `security`, `developer`, `user`).
+- `GET /agents` – list all agents for the project; accepts optional `projectId` (must match the caller’s project).
+- `GET /agents/{agentId}` – fetch a specific agent (enforces project scoping).
+- `GET /agents/classes` – return the static catalog of agent classes with descriptions, default capabilities, and tool manifests. Useful for Codex/LLMs before calling `POST /agents`.
+- `GET /agents/tools` – enumerate runtime tool definitions (Module 3) so builders know which intents are available (`log.emit`, `ai.ask`, `flow.execute`, `grid.submit`, ...).
+- `POST /agents/{agentId}/run` – enqueue a runtime task for the given agent. Body shape: `{ intent: "ai.ask" | "flow.execute" | ..., payload?: {...} }`. The supervisor validates capabilities, routes the task through Router/Worker lanes, executes via the Tool Execution Engine, and returns `{ taskId, status, output }`.
+
+### 2.24 SNRL Resolve (Module 4)
 - `POST /snrl/resolve` – Semantic Network Resolution Layer entrypoint. Requires `X-VOIKE-API-Key`.
 - `GET /snrl/endpoints` (admin) – list configured POP endpoints.
 - `POST /snrl/endpoints` (admin) – upsert or replace endpoint metadata (id, host, ip, region, capabilities).
 - `DELETE /snrl/endpoints/:id` (admin) – remove a POP endpoint from the resolver set.
+- `GET /snrl/predictions` (admin) – inspect predictive cache entries (domain, region, intent, confidence, top candidate + generatedAt) for dashboards or POP validation.
+- `GET /snrl/insights` (admin) – aggregate top domains, regional load, cache size, failing endpoints, and the active trust anchor pulled from `config/snrl-state.json`.
+- `GET /snrl/failures` (admin) – summarize failure counters + recent failure events (endpoint metadata, reason, timestamp) so you can trace the auto-penalty loop.
 
 Request:
 ```json
@@ -320,7 +337,8 @@ Response:
 Notes:
 - Backed by `flows/snrl-semantic.flow` which orchestrates lookup → signing via FLOW APX opcodes.
 - Endpoints initially sourced from `config/snrl-endpoints.json`; update through MCP tools to reflect real POPs.
-- Responses are cryptographically signed so clients can verify provenance.
+- Responses are cryptographically signed so clients can verify provenance; the trust anchor persists inside `config/snrl-state.json` so Module 4’s distributed trust stays stable across restarts.
+- `services/snrl-ai-edge/` ships a FastAPI + dnslib reference implementation that consumes these endpoints locally (UDP port `1053` by default) and exposes the same predictive cache metrics via HTTP.
 
 ### 2.24 VDNS Management
 - `POST /vdns/zones` (admin) – create or replace a full zone definition (zone metadata + records).
@@ -341,6 +359,37 @@ Zones are stored in `config/vdns-zones.json` by default; all changes are auditab
   - `flows/onboard-foreign-app.flow` drives `voike app onboard` to clone/import apps from Lovable/Replit/git + Supabase/Postgres.
   - `flows/voike-meta.flow` boots VOIKE itself (DB/kernels/VASM/envs/VVM/VPKG launch, regression/perf, capsule snapshots), and `flows/voike-self-evolve.flow` runs the planner/codegen/tester/infra/product agents to evolve VOIKE.
 - These agents are GPT-backed when `OPENAI_API_KEY` is provided; otherwise they fall back to synthetic responses so FLOW plans can still execute end-to-end.
+
+### 2.26 Hypermesh + UOR Engine (Module 5)
+- `GET /hypermesh/status` (admin) – returns the latest PerfWatch/MeshSurgeon/HyperRoute snapshot for the local node (CPU%, RAM MB, sleep state, predicted spawn, tickless runtime data, and neighbors).
+- `GET /hypermesh/routes` (admin) – shortcut to the current HyperRoute table (top candidate nodes, estimated latency/score, route class, reasoning notes).
+- `GET /hypermesh/events?limit=50` (admin) – lists recent Hypermesh events (perf alerts, self-heal actions) recorded by MeshSurgeon.
+- `GET /hypermesh/agents` (admin) – documents the active Module 5 agents (PerfWatch, MeshSurgeon, HyperRoute) plus their telemetry keys/responsibilities.
+- Data is persisted inside `hypermesh_nodes`/`hypermesh_events` tables and mirrored to `config/snrl-state.json` trust metadata so Module 5 survives restarts.
+- For low-level runtime experimentation, see `services/uor-engine/` (Rust microkernel + WASM loader) which powers the forthcoming UOR Engine deployments.
+
+### 2.27 Global Trust, PQC, and Security (Module 6)
+- `GET /trust/status` (admin) – PQC/DTC snapshot including current Kyber/Dilithium-style fingerprint, trust score, PTA anomaly metrics, and safe optimization policy instructions.
+- `GET /trust/anchors?limit=50` (admin) – immutable history of trust anchors per node (algorithm, fingerprint, rotation reason). Keys are stored in `trust_anchors` and shared with Module 4’s trust anchor chain.
+- `GET /trust/sessions?limit=50` (admin) – active PQC sessions with peer nodes plus threat scores (0–1). Useful for HyperRoute/Infra dashboards.
+- `GET /trust/events?limit=50` (admin) – predictive or security events generated by PTA-Agent (rogue nodes, latency spikes, replication advisories).
+- `GET /trust/pta` (admin) – the raw Predictive Threat Analyzer report (anomaly score, suggested mitigations) for automation tools or FLOW ops.
+- TrustService runs tickless (idle footprint <35 MB) and never exposes private keys; only fingerprints + metadata are returned.
+
+### 2.28 Hybrid Query & Reasoning (Module 8)
+- `POST /hybrid/query` – body `{ sql?, semanticText?, naturalLanguage?, mode?, graph?, limit? }`. Returns `{ plan, result, cacheHit }`. Plans describe vector/SQL/graph/fusion steps + cost estimates.
+- `GET /hybrid/plans?limit=` – inspect cached plans (id, mode, steps, createdAt, costEstimate).
+- `GET /hybrid/cache` – view result cache entries (expires, engine, row counts).
+- `GET /hybrid/profiles?limit=` – latency/perf profiler records (planId, latencyMs, engine, timestamp).
+- NL intents default to hybrid plans; keywords “graph/connection” force graph mode, “similar/like” force vector mode. All queries respect project scoping and piggyback on Module 6 RBAC.
+
+### 2.29 Streams & Event Processing (Module 9)
+- `POST /streams` / `GET /streams` / `GET /streams/{id}` – manage real-time streams (name, kind, retention, description).
+- `POST /streams/{id}/events` – append an event (`{ payload, latencyMs?, throughput? }`). Response includes `{ eventId, sequence }`.
+- `GET /streams/{id}/events?since=&limit=` – fetch ordered events for replay/backfill.
+- `POST /streams/{id}/checkpoints` – store processing checkpoints (`{ position, metadata? }`).
+- `GET /streams/{id}/checkpoints` – retrieve checkpoint history.
+- `GET /streams/{id}/profile` – live latency/throughput metrics for dashboards.
 
 ## 3. Health & Reference Endpoints
 - `GET /health`

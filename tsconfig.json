@@ -48,8 +48,14 @@
       "@orchestrator/*": ["src/orchestrator/*"],
       "@agents/*": ["src/agents/*"],
       "@onboard/*": ["src/onboard/*"],
-      "@snrl/*": ["src/snrl/*"]
+      "@snrl/*": ["src/snrl/*"],
+      "@hypermesh/*": ["src/hypermesh/*"],
+      "@trust/*": ["src/trust/*"],
+      "@ingestion/*": ["src/ingestion/*"],
+      "@hybrid/*": ["src/hybrid/*"],
+      "@streams/*": ["src/streams/*"]
     }
   },
-  "include": ["src", "flow/src", "vasm/src", "tests"]
+  "include": ["src", "flow/src", "vasm/src", "tests"],
+  "exclude": ["flow/src/sdk/react.tsx"]
 }

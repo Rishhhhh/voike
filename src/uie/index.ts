@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { VDBClient } from '@vdb/index';
+import { OmniIngestionService } from '@ingestion/service';
 import { detectFormat } from './detector';
 import { parseJson } from './parsers/jsonParser';
 import { parseCsv } from './parsers/csvParser';
@@ -15,7 +16,7 @@ import { IngestRequest, StructuredData } from './types';
 import { logger, telemetryBus } from '@telemetry/index';
 
 export class UniversalIngestionEngine {
-  constructor(private pool: Pool, private vdb: VDBClient) {}
+  constructor(private pool: Pool, private vdb: VDBClient, private omni?: OmniIngestionService) {}
 
   private async createJob(status: string, projectId: string) {
     const id = uuidv4();
@@ -29,6 +30,11 @@ export class UniversalIngestionEngine {
   async ingestFile(request: IngestRequest, projectId: string) {
     const jobId = await this.createJob('processing', projectId);
     try {
+      await this.omni?.recordSource(projectId, request.filename, {
+        mimeType: request.mimeType,
+        bytes: request.bytes.length,
+        tags: request.hints?.tags,
+      });
       const format = await detectFormat(request.bytes, request.filename, request.mimeType);
       let structured: StructuredData;
       switch (format) {
@@ -73,6 +79,22 @@ export class UniversalIngestionEngine {
           },
         ],
       );
+      await this.omni?.recordLineage({
+        projectId,
+        jobId,
+        filename: request.filename,
+        format,
+        rowCount: structured.rows.length,
+        schemaPreview: {
+          table: schema.tableName,
+          strategy: schema.strategy,
+          primaryKey: schema.primaryKey,
+          columns: structured.inferredSchema,
+        },
+        plan: this.buildPlan(structured),
+        embedding: this.embeddingMetadata(structured),
+        agentId: request.hints?.agentId,
+      });
       telemetryBus.publish({
         type: 'ingest.completed',
         payload: {
@@ -92,6 +114,32 @@ export class UniversalIngestionEngine {
       );
       throw err;
     }
+  }
+
+  private buildPlan(structured: StructuredData) {
+    const steps: string[] = [];
+    if (structured.format === 'json' || structured.format === 'log') {
+      steps.push('detect_format');
+      steps.push('flatten_nested');
+    }
+    if (structured.rows.length > 0 && Object.values(structured.rows[0]).some((value) => value === null)) {
+      steps.push('drop_nulls');
+    }
+    if (structured.inferredSchema.some((col) => col.type === 'string')) {
+      steps.push('normalize_strings');
+    }
+    if (!steps.length) {
+      steps.push('noop');
+    }
+    return steps;
+  }
+
+  private embeddingMetadata(structured: StructuredData) {
+    const enableEmbedding = structured.inferredSchema.some((col) => col.type === 'string');
+    return {
+      enabled: enableEmbedding,
+      dimensions: enableEmbedding ? 1536 : undefined,
+    };
   }
 
   private async materialize(structured: StructuredData, schema: ReturnType<typeof synthesizeSchema>) {

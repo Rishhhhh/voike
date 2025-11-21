@@ -40,9 +40,17 @@ import { VpkgService, type VpkgManifest } from '@vpkg/service';
 import { EnvironmentService } from '@env/service';
 import { OrchestratorService } from '@orchestrator/service';
 import { AgentOpsService } from '@agents/service';
+import { AgentRegistryService } from '@agents/registry';
+import { AgentRuntimeService } from '@agents/runtime';
+import { AGENT_CLASSES } from '@agents/classes';
 import { SnrlController } from '../snrl/controller';
 import { SnrlService } from '../snrl/service';
 import { VdnsService } from '../vdns/service';
+import { HypermeshService } from '@hypermesh/index';
+import { TrustService } from '@trust/index';
+import { OmniIngestionService } from '@ingestion/service';
+import { HybridQueryService } from '@hybrid/queryService';
+import { StreamIngestionService } from '@streams/service';
 import {
   addWaitlistEntry,
   approveWaitlistEntry,
@@ -631,12 +639,99 @@ const orchestratorAgentSchema = z.object({
   config: z.record(z.any()).optional(),
 });
 
+const agentRegistrySchema = z.object({
+  projectId: z.string().uuid().optional(),
+  name: z.string().min(1),
+  class: z.enum(['system', 'kernel', 'database', 'network', 'developer', 'user']).or(z.string()),
+  capabilities: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+  memory: z
+    .object({
+      short: z.string().optional(),
+      long: z.string().optional(),
+      capsules: z.array(z.string()).optional(),
+    })
+    .optional(),
+  goalStack: z
+    .array(
+      z.object({
+        goal: z.string().min(1),
+        context: z.record(z.any()).optional(),
+        priority: z.number().min(0).max(1).optional(),
+      }),
+    )
+    .optional(),
+  state: z.record(z.any()).optional(),
+  metadata: z.record(z.any()).optional(),
+});
+
+const agentQuerySchema = z.object({
+  projectId: z.string().uuid().optional(),
+});
+
 const orchestratorTaskSchema = z.object({
   projectId: z.string().uuid(),
   kind: z.enum(['feature', 'bugfix', 'refactor', 'migration']).optional(),
   description: z.string().min(1),
   priority: z.enum(['low', 'medium', 'high']).optional(),
   metadata: z.record(z.any()).optional(),
+});
+
+const ingestionQuerySchema = z.object({
+  limit: z.string().optional(),
+});
+
+const ingestionSchemaInferSchema = z.object({
+  logicalName: z.string().optional(),
+  rows: z.array(z.record(z.any())).min(1).max(500),
+});
+
+const ingestionTransformPlanSchema = z.object({
+  sample: z.array(z.record(z.any())).min(1).max(500),
+  hints: z
+    .object({
+      flattenNested: z.boolean().optional(),
+      dropNulls: z.boolean().optional(),
+      treatArraysAsJson: z.boolean().optional(),
+    })
+    .optional(),
+});
+
+const hybridQuerySchema = z.object({
+  sql: z.string().optional(),
+  semanticText: z.string().optional(),
+  naturalLanguage: z.string().optional(),
+  mode: z.enum(['sql', 'semantic', 'graph', 'hybrid']).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
+  graph: z
+    .object({
+      fromId: z.string().optional(),
+      depth: z.number().int().min(1).max(10).optional(),
+    })
+    .optional(),
+});
+
+const streamCreateSchema = z.object({
+  name: z.string().min(1),
+  kind: z.enum(['events', 'metrics', 'telemetry', 'custom']).optional(),
+  retentionSeconds: z.number().int().min(60).max(604800).optional(),
+  description: z.string().optional(),
+});
+
+const streamEventSchema = z.object({
+  payload: z.record(z.any()),
+  latencyMs: z.number().optional(),
+  throughput: z.number().optional(),
+});
+
+const streamCheckpointSchema = z.object({
+  position: z.number().int().min(0),
+  metadata: z.record(z.any()).optional(),
+});
+
+const streamEventQuerySchema = z.object({
+  since: z.string().optional(),
+  limit: z.string().optional(),
 });
 
 const ledgerReplaySchema = z.object({
@@ -797,8 +892,15 @@ export type ApiDeps = {
   env: EnvironmentService;
   orchestrator: OrchestratorService;
   agentOps: AgentOpsService;
+  agentRuntime: AgentRuntimeService;
+  agentRegistry: AgentRegistryService;
   vdns: VdnsService;
   snrlService: SnrlService;
+  hypermesh: HypermeshService;
+  trust: TrustService;
+  ingestion: OmniIngestionService;
+  hybridQuery: HybridQueryService;
+  streams: StreamIngestionService;
 };
 
 export const buildServer = ({
@@ -828,8 +930,15 @@ export const buildServer = ({
   env,
   orchestrator,
   agentOps,
+  agentRuntime,
+  agentRegistry,
   snrl,
   snrlService,
+  hypermesh,
+  trust,
+  ingestion,
+  hybridQuery,
+  streams,
   vdns,
 }: ApiDeps & {
   blobgrid: BlobGridService;
@@ -855,6 +964,11 @@ export const buildServer = ({
   agentOps: AgentOpsService;
   snrl: SnrlController;
   snrlService: SnrlService;
+  hypermesh: HypermeshService;
+  trust: TrustService;
+  ingestion: OmniIngestionService;
+  hybridQuery: HybridQueryService;
+  streams: StreamIngestionService;
   vdns: VdnsService;
 }): FastifyInstance => {
   const app = Fastify({ logger: logger as unknown as FastifyBaseLogger });
@@ -879,7 +993,16 @@ export const buildServer = ({
     endpoints: {
       waitlist: ['/waitlist', '/admin/waitlist', '/admin/waitlist/:id/approve'],
       organizations: ['/admin/organizations (GET, POST)', '/admin/projects'],
-      ingestion: ['/ingest/file', '/ingest/:jobId'],
+      ingestion: [
+        '/ingest/file',
+        '/ingest/:jobId',
+        '/ingestion/jobs',
+        '/ingestion/lineage',
+        '/ingestion/schema/infer',
+        '/ingestion/transform/plan',
+      ],
+      hybridQuery: ['/hybrid/query', '/hybrid/plans', '/hybrid/cache', '/hybrid/profiles'],
+      streams: ['/streams', '/streams/:id/events', '/streams/:id/checkpoints', '/streams/:id/profile'],
       query: ['/query', '/kernel/state', '/ledger/*'],
       telemetry: ['/metrics', '/events'],
       mcp: ['/mcp/tools', '/mcp/execute'],
@@ -894,7 +1017,9 @@ export const buildServer = ({
       flow: ['/flow/parse', '/flow/plan', '/flow/execute', '/flow/plans', '/flow/ops'],
       vpkg: ['/vpkgs (POST, GET)', '/vpkgs/:id/launch', '/vpkgs/download?name=…', '/apps', '/apps/:id'],
       env: ['/env/descriptors (POST, GET)', '/env/descriptors/:id', '/env/descriptors/:id/resolve'],
-      snrl: ['/snrl/resolve'],
+      snrl: ['/snrl/resolve', '/snrl/endpoints', '/snrl/predictions', '/snrl/insights', '/snrl/failures'],
+      hypermesh: ['/hypermesh/status', '/hypermesh/routes', '/hypermesh/events', '/hypermesh/agents'],
+      trust: ['/trust/status', '/trust/anchors', '/trust/events', '/trust/sessions', '/trust/pta'],
     },
     curlExamples: [
       `curl -X POST <VOIKE_ENDPOINT>/waitlist \\
@@ -961,6 +1086,12 @@ export const buildServer = ({
         command: 'curl -X POST /flow/plan …',
       },
     ],
+  };
+
+  const clampLimit = (value: string | undefined, fallback: number, max = 200) => {
+    const parsed = Number(value ?? fallback);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.max(1, Math.min(max, Math.floor(parsed)));
   };
 
   app.register(cors, {
@@ -1360,6 +1491,135 @@ export const buildServer = ({
     return job;
   });
 
+  app.get('/ingestion/jobs', { preHandler: requireApiKey }, async (request) => {
+    const query = ingestionQuerySchema.parse(request.query || {});
+    const limit = clampLimit(query.limit, 25, 100);
+    return ingestion.listJobs(request.project!.id, limit);
+  });
+
+  app.get('/ingestion/jobs/:jobId', { preHandler: requireApiKey }, async (request, reply) => {
+    const { jobId } = request.params as { jobId: string };
+    const job = await uie.getJob(jobId, request.project!.id);
+    if (!job) {
+      reply.code(404);
+      return { error: 'Job not found' };
+    }
+    return job;
+  });
+
+  app.get('/ingestion/lineage', { preHandler: requireApiKey }, async (request) => {
+    const query = ingestionQuerySchema.parse(request.query || {});
+    const limit = clampLimit(query.limit, 50, 200);
+    return ingestion.listLineage(request.project!.id, limit);
+  });
+
+  app.post('/ingestion/schema/infer', { preHandler: requireApiKey }, async (request) => {
+    const body = ingestionSchemaInferSchema.parse(request.body || {});
+    return ingestion.inferSchemaFromSample(body);
+  });
+
+  app.post('/ingestion/transform/plan', { preHandler: requireApiKey }, async (request) => {
+    const body = ingestionTransformPlanSchema.parse(request.body || {});
+    return ingestion.planTransformations(body);
+  });
+
+  app.post('/streams', { preHandler: requireApiKey }, async (request) => {
+    const body = streamCreateSchema.parse(request.body || {});
+    return streams.createStream(request.project!.id, body.name, body);
+  });
+
+  app.get('/streams', { preHandler: requireApiKey }, async (request) => streams.listStreams(request.project!.id));
+
+  app.get('/streams/:streamId', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    const stream = await streams.getStream(streamId, request.project!.id);
+    if (!stream) {
+      reply.code(404);
+      return { error: 'Stream not found' };
+    }
+    return stream;
+  });
+
+  app.post('/streams/:streamId/events', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    const body = streamEventSchema.parse(request.body || {});
+    try {
+      return await streams.appendEvent(streamId, request.project!.id, body);
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/streams/:streamId/events', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    const query = streamEventQuerySchema.parse(request.query || {});
+    const since = query.since ? Number(query.since) : 0;
+    const limit = clampLimit(query.limit, 100, 1000);
+    try {
+      return await streams.listEvents(streamId, request.project!.id, { since, limit });
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/streams/:streamId/checkpoints', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    const body = streamCheckpointSchema.parse(request.body || {});
+    try {
+      return await streams.createCheckpoint(streamId, request.project!.id, body.position, body.metadata);
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/streams/:streamId/checkpoints', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    const query = ingestionQuerySchema.parse(request.query || {});
+    try {
+      return await streams.listCheckpoints(streamId, request.project!.id, clampLimit(query.limit, 20, 100));
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/streams/:streamId/profile', { preHandler: requireApiKey }, async (request, reply) => {
+    const { streamId } = request.params as { streamId: string };
+    try {
+      const profile = await streams.getProfile(streamId, request.project!.id);
+      if (!profile) {
+        reply.code(404);
+        return { error: 'Profile not found' };
+      }
+      return profile;
+    } catch (err) {
+      reply.code(404);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.post('/hybrid/query', { preHandler: requireApiKey }, async (request) => {
+    const body = hybridQuerySchema.parse(request.body || {});
+    return hybridQuery.execute(request.project!.id, body);
+  });
+
+  app.get('/hybrid/plans', { preHandler: requireApiKey }, async (request) => {
+    const query = ingestionQuerySchema.parse(request.query || {});
+    const limit = clampLimit(query.limit, 25, 100);
+    return hybridQuery.listPlans(limit);
+  });
+
+  app.get('/hybrid/cache', { preHandler: requireApiKey }, async () => hybridQuery.listCache());
+
+  app.get('/hybrid/profiles', { preHandler: requireApiKey }, async (request) => {
+    const query = ingestionQuerySchema.parse(request.query || {});
+    const limit = clampLimit(query.limit, 25, 100);
+    return hybridQuery.listProfiles(limit);
+  });
+
   app.post('/query', { preHandler: requireApiKey }, async (request) => {
     await chaos.guard('query');
     const parsed = querySchema.parse(request.body);
@@ -1715,6 +1975,34 @@ export const buildServer = ({
   app.get('/mesh/self', async () => mesh.getSelf());
 
   app.get('/mesh/nodes', { preHandler: requireAdmin }, async () => mesh.listPeers());
+
+  app.get('/hypermesh/status', { preHandler: requireAdmin }, async () => hypermesh.getStatus());
+  app.get('/hypermesh/routes', { preHandler: requireAdmin }, async () => hypermesh.getRoutes());
+  app.get('/hypermesh/agents', { preHandler: requireAdmin }, async () => hypermesh.listAgents());
+  app.get('/hypermesh/events', { preHandler: requireAdmin }, async (request) => {
+    const { limit } = (request.query || {}) as { limit?: string };
+    const parsed = limit ? Number(limit) : 50;
+    const normalized = Math.max(1, Math.min(200, Number.isFinite(parsed) ? parsed : 50));
+    return hypermesh.listEvents(normalized);
+  });
+
+  app.get('/trust/status', { preHandler: requireAdmin }, async () => trust.getStatus());
+  app.get('/trust/anchors', { preHandler: requireAdmin }, async (request) => {
+    const { limit } = (request.query || {}) as { limit?: string };
+    const normalized = Math.max(1, Math.min(200, Number(limit || 50) || 50));
+    return trust.listAnchors(normalized);
+  });
+  app.get('/trust/events', { preHandler: requireAdmin }, async (request) => {
+    const { limit } = (request.query || {}) as { limit?: string };
+    const normalized = Math.max(1, Math.min(200, Number(limit || 50) || 50));
+    return trust.listEvents(normalized);
+  });
+  app.get('/trust/sessions', { preHandler: requireAdmin }, async (request) => {
+    const { limit } = (request.query || {}) as { limit?: string };
+    const normalized = Math.max(1, Math.min(200, Number(limit || 50) || 50));
+    return trust.listSessions(normalized);
+  });
+  app.get('/trust/pta', { preHandler: requireAdmin }, async () => trust.getPtaReport());
 
   app.get('/apix/schema', async () => apix.getSchema());
 
@@ -2077,6 +2365,9 @@ export const buildServer = ({
       return { error: (err as Error).message };
     }
   });
+  app.get('/snrl/predictions', { preHandler: requireAdmin }, async () => snrlService.getPredictions());
+  app.get('/snrl/insights', { preHandler: requireAdmin }, async () => snrlService.getInsights());
+  app.get('/snrl/failures', { preHandler: requireAdmin }, async () => snrlService.getFailures());
 
   app.post('/vdns/zones', { preHandler: requireAdmin }, async (request, reply) => {
     try {
@@ -2261,6 +2552,86 @@ export const buildServer = ({
   });
 
   app.get('/orchestrator/agents', async () => orchestrator.listAgents());
+
+  app.post('/agents', { preHandler: requireApiKey }, async (request, reply) => {
+    const body = agentRegistrySchema.parse(request.body || {});
+    if (!request.project) {
+      reply.code(400);
+      return { error: 'Project context required' };
+    }
+    const requestedProjectId = body.projectId || request.project.id;
+    if (requestedProjectId !== request.project.id) {
+      reply.code(403);
+      return { error: 'Cannot register agent for another project' };
+    }
+    try {
+      return await agentRegistry.registerAgent({
+        projectId: requestedProjectId,
+        name: body.name,
+        class: body.class,
+        capabilities: body.capabilities,
+        tools: body.tools,
+        memory: body.memory,
+        goalStack: body.goalStack,
+        state: body.state,
+        metadata: body.metadata,
+      });
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
+
+  app.get('/agents', { preHandler: requireApiKey }, async (request, reply) => {
+    if (!request.project) {
+      reply.code(400);
+      return { error: 'Project context required' };
+    }
+    const query = agentQuerySchema.parse(request.query || {});
+    const projectId = query.projectId || request.project.id;
+    if (projectId !== request.project.id) {
+      reply.code(403);
+      return { error: 'Cannot list agents for another project' };
+    }
+    return agentRegistry.listAgents(projectId);
+  });
+
+  app.get('/agents/:agentId', { preHandler: requireApiKey }, async (request, reply) => {
+    if (!request.project) {
+      reply.code(400);
+      return { error: 'Project context required' };
+    }
+    const { agentId } = request.params as { agentId: string };
+    const agent = await agentRegistry.getAgent(agentId);
+    if (!agent || (agent.projectId && agent.projectId !== request.project.id)) {
+      reply.code(404);
+      return { error: 'Agent not found' };
+    }
+    return agent;
+  });
+
+  app.get('/agents/classes', { preHandler: requireApiKey }, async () => AGENT_CLASSES);
+
+  app.get('/agents/tools', { preHandler: requireApiKey }, async () => agentRuntime.listTools());
+
+  app.post('/agents/:agentId/run', { preHandler: requireApiKey }, async (request, reply) => {
+    if (!request.project) {
+      reply.code(400);
+      return { error: 'Project context required' };
+    }
+    const { agentId } = request.params as { agentId: string };
+    const body = (request.body || {}) as { intent?: string; payload?: Record<string, unknown> };
+    if (!body.intent) {
+      reply.code(400);
+      return { error: 'intent is required' };
+    }
+    try {
+      return await agentRuntime.run(agentId, request.project.id, body.intent, body.payload || {});
+    } catch (err) {
+      reply.code(400);
+      return { error: (err as Error).message };
+    }
+  });
 
   app.post('/orchestrator/tasks', async (request, reply) => {
     const body = orchestratorTaskSchema.parse(request.body || {});

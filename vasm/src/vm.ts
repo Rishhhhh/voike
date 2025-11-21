@@ -236,12 +236,14 @@ export class VasmVM {
       this.jump(target);
     }
   }
-      throw new Error("Stack underflow on RET");
+
+  private call(target?: Operand) {
     const address = this.resolveJumpTarget(target);
-    if (address !== undefined) {
-      this.stack.push(this.pc + 1);
-      this.pc = address - 1;
+    if (address === undefined) {
+      throw new Error('Invalid CALL target');
     }
+    this.stack.push(this.pc + 1);
+    this.pc = address - 1;
   }
 
   private ret() {

@@ -1,0 +1,7 @@
+name: dotnet-sdk-8
+kind: docker
+baseImage: mcr.microsoft.com/dotnet/sdk:8.0
+command: /bin/sh -c "dotnet --version && dotnet workload list"
+variables:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+notes: ".NET 8 SDK container used by FLOW/VVM descriptors. Works on macOS + Linux nodes because VOIKE wraps it in docker run."

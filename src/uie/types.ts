@@ -5,6 +5,8 @@ export type IngestRequest = {
   hints?: {
     logicalName?: string;
     defaultEngine?: 'sql' | 'doc' | 'vector' | 'kv' | 'graph' | 'timeseries';
+    agentId?: string;
+    tags?: string[];
   };
 };
 
