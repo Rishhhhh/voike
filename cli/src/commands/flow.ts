@@ -14,6 +14,25 @@ function readFlowSource(file: string): string {
   return fs.readFileSync(abs, 'utf-8');
 }
 
+const DEMO_FLOWS: Record<string, { description: string; file: string }> = {
+  math: {
+    description: 'Math Playground – Grid Fibonacci',
+    file: 'flows/tutorial-math.flow',
+  },
+  ingest: {
+    description: 'Data Playground – Ingest + Hybrid Query',
+    file: 'flows/tutorial-ingest.flow',
+  },
+  'voike-grid': {
+    description: 'VOIKE Grid Fibonacci (full example)',
+    file: 'flows/voike-grid.flow',
+  },
+  voike: {
+    description: 'VOIKE – Core, AI, Streams, Grid (end-to-end)',
+    file: 'flows/voike.flow',
+  },
+};
+
 export function registerFlow(program: Command) {
   const flow = program.command('flow').description('FLOW orchestration helpers');
 
@@ -95,5 +114,49 @@ export function registerFlow(program: Command) {
         process.exit(1);
       }
     });
-}
 
+  flow
+    .command('demo')
+    .description('List or run built-in FLOW examples')
+    .argument('[name]', 'Example name to run (leave empty to list)')
+    .action(async (name?: string) => {
+      if (!name) {
+        // eslint-disable-next-line no-console
+        console.log('Available FLOW demos:');
+        for (const [key, info] of Object.entries(DEMO_FLOWS)) {
+          console.log(`  ${key.padEnd(10)} - ${info.description}`);
+        }
+        console.log('\nRun a demo with: voike flow demo <name>');
+        return;
+      }
+
+      const demo = DEMO_FLOWS[name];
+      if (!demo) {
+        // eslint-disable-next-line no-console
+        console.error(`Unknown demo '${name}'. Run 'voike flow demo' to list options.`);
+        process.exit(1);
+      }
+
+      const spinner = ora(`Running FLOW demo "${name}" from ${demo.file}...`).start();
+      try {
+        const source = readFlowSource(demo.file);
+        const plan = await httpRequest<{ id: string }>({
+          path: '/flow/plan',
+          method: 'POST',
+          body: { source },
+        });
+        spinner.text = `Executing plan ${plan.id}...`;
+        const result = await httpRequest<unknown>({
+          path: '/flow/execute',
+          method: 'POST',
+          body: { planId: plan.id, mode: 'auto' },
+        });
+        spinner.succeed('FLOW demo execution completed');
+        // eslint-disable-next-line no-console
+        console.log(JSON.stringify(result, null, 2));
+      } catch (err) {
+        spinner.fail((err as Error).message);
+        process.exit(1);
+      }
+    });
+}

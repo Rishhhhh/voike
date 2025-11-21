@@ -137,6 +137,46 @@ def cmd_flow_run(args: argparse.Namespace) -> None:
   print(json.dumps(result, indent=2))
 
 
+DEMO_FLOWS: Dict[str, Dict[str, str]] = {
+  "math": {
+    "description": "Math Playground – Grid Fibonacci",
+    "file": "flows/tutorial-math.flow",
+  },
+  "ingest": {
+    "description": "Data Playground – Ingest + Hybrid Query",
+    "file": "flows/tutorial-ingest.flow",
+  },
+  "voike-grid": {
+    "description": "VOIKE Grid Fibonacci (full example)",
+    "file": "flows/voike-grid.flow",
+  },
+  "voike": {
+    "description": "VOIKE – Core, AI, Streams, Grid (end-to-end)",
+    "file": "flows/voike.flow",
+  },
+}
+
+
+def cmd_flow_demo(args: argparse.Namespace) -> None:
+  name = getattr(args, "name", None)
+  if not name:
+    print("Available FLOW demos:")
+    for key, info in DEMO_FLOWS.items():
+      print(f"  {key.ljust(10)} - {info['description']}")
+    print("\nRun a demo with: voike flow demo <name>")
+    return
+
+  demo = DEMO_FLOWS.get(name)
+  if not demo:
+    raise SystemExit(
+      f"Unknown demo '{name}'. Run 'voike flow demo' with no args to list options.",
+    )
+
+  source = _read_flow_source(demo["file"])
+  result = _execute_flow_from_source(source, "auto")
+  print(json.dumps(result, indent=2))
+
+
 def cmd_project_create(org: str, project: str, key_label: str) -> None:
   admin_token = os.environ.get("VOIKE_ADMIN_TOKEN") or os.environ.get("ADMIN_TOKEN")
   if not admin_token:
@@ -309,6 +349,17 @@ def build_parser() -> argparse.ArgumentParser:
     help="Execution mode (auto|sync|async)",
   )
   flow_run.set_defaults(func=cmd_flow_run)
+
+  flow_demo = flow_sub.add_parser(
+    "demo",
+    help="List or run built-in FLOW examples (e.g. math, ingest, voike-grid)",
+  )
+  flow_demo.add_argument(
+    "name",
+    nargs="?",
+    help="Demo name to run (leave empty to list)",
+  )
+  flow_demo.set_defaults(func=cmd_flow_demo)
 
   # project create ...
   project = subparsers.add_parser(

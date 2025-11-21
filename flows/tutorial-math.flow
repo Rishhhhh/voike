@@ -1,0 +1,36 @@
+FLOW "Math Playground – Grid Fibonacci"
+
+INPUTS
+  text projectId
+  number fibIndex
+END INPUTS
+
+# This FLOW uses VOIKE's Grid to compute Fibonacci(n).
+# It is intentionally small and human-readable so you can
+# tweak it while learning FLOW and the grid APIs.
+
+STEP submit_job =
+  APX_EXEC "grid.submitFibSplit"
+    WITH {
+      projectId = projectId,
+      n = fibIndex
+    }
+
+STEP await_job =
+  APX_EXEC "grid.awaitJob"
+    WITH {
+      projectId = projectId,
+      jobId = submit_job.jobId
+    }
+
+STEP output =
+  OUTPUT_TEXT {
+    explanation = "Fibonacci via VOIKE Grid",
+    fibIndex = fibIndex,
+    fibValue = await_job.value,
+    jobId = submit_job.jobId,
+    status = await_job.status
+  }
+
+END FLOW
+

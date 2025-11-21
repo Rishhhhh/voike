@@ -1,0 +1,49 @@
+FLOW "Data Playground – Ingest + Hybrid Query"
+
+INPUTS
+  text projectId
+  text datasetPath
+  text logicalName optional
+END INPUTS
+
+# This FLOW ingests a local CSV into VOIKE, then runs a
+# simple hybrid query and returns a compact JSON summary.
+
+STEP ingest_plan =
+  APX_EXEC "ingest.prepare"
+    WITH {
+      projectId = projectId,
+      filePath = datasetPath,
+      logicalName = logicalName
+    }
+
+STEP ingest_run =
+  APX_EXEC "ingest.execute"
+    WITH {
+      projectId = projectId,
+      planId = ingest_plan.planId
+    }
+
+STEP hybrid_query =
+  APX_EXEC "query.runHybrid"
+    WITH {
+      projectId = projectId,
+      sql = "SELECT * FROM " + ingest_run.table + " LIMIT 5",
+      semanticText = "quick sample rows from the new dataset"
+    }
+
+STEP summary =
+  OUTPUT_TEXT {
+    dataset = {
+      table = ingest_run.table,
+      jobId = ingest_run.jobId
+    },
+    query = {
+      engine = hybrid_query.meta.engine,
+      latencyMs = hybrid_query.meta.latencyMs,
+      rows = hybrid_query.rows
+    }
+  }
+
+END FLOW
+
