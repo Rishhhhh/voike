@@ -31,6 +31,20 @@ Everything is scoped by `X-VOIKE-API-Key`. Give each project its own key. No cro
 ## 2. Quickstart (5 minutes)
 
 ### 2.1 Boot VOIKE
+
+**Genesis node (Linux, first server)**
+
+Use the Genesis-only compose file so the canonical node talks to its own local Postgres before other nodes attach:
+```bash
+git clone https://github.com/Rishhhhh/voike.git
+cd voike
+cp .env.example .env   # set GENESIS_* + VOIKE_PUBLIC_* as needed
+docker compose -f deploy/compose/voike-genesis.compose.yml up -d --build
+```
+
+**Additional nodes (Mac/Windows/Linux)**
+
+All other nodes point at the shared Postgres running on the Genesis node (defaults to `voike.supremeuf.com:5432` in `.env.example`):
 ```bash
 git clone https://github.com/Rishhhhh/voike.git
 cd voike
