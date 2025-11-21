@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -83,8 +84,21 @@ def cmd_flow_parse(args: argparse.Namespace) -> None:
     print("Warnings:", json.dumps(warnings, indent=2))
 
 
+def _read_flow_source(path_str: str) -> str:
+  path = Path(path_str)
+  if path.is_file():
+    return path.read_text(encoding="utf-8")
+
+  # Fallback to flows/ subdirectory to mirror Node CLI behavior.
+  from_flows = Path.cwd() / "flows" / path_str
+  if from_flows.is_file():
+    return from_flows.read_text(encoding="utf-8")
+
+  raise SystemExit(f"FLOW file not found: {path_str}")
+
+
 def cmd_flow_plan(args: argparse.Namespace) -> None:
-  source = Path(args.file).read_text(encoding="utf-8")
+  source = _read_flow_source(args.file)
   result = http_request(
     "POST",
     "/flow/plan",
@@ -94,8 +108,7 @@ def cmd_flow_plan(args: argparse.Namespace) -> None:
   print(plan_id or result)
 
 
-def cmd_flow_run(args: argparse.Namespace) -> None:
-  source = Path(args.file).read_text(encoding="utf-8")
+def _execute_flow_from_source(source: str, mode: str) -> Any:
   plan = http_request(
     "POST",
     "/flow/plan",
@@ -104,11 +117,21 @@ def cmd_flow_run(args: argparse.Namespace) -> None:
   plan_id = plan.get("id")
   if not plan_id:
     raise SystemExit(f"Unexpected /flow/plan response: {plan}")
-  result = http_request(
+
+  cfg = load_config()
+  body: Dict[str, Any] = {"planId": plan_id, "mode": mode}
+  if cfg.get("projectId"):
+    body["inputs"] = {"projectId": cfg["projectId"]}
+  return http_request(
     "POST",
     "/flow/execute",
-    body={"planId": plan_id, "mode": args.mode},
+    body=body,
   )
+
+
+def cmd_flow_run(args: argparse.Namespace) -> None:
+  source = _read_flow_source(args.file)
+  result = _execute_flow_from_source(source, args.mode)
   print(json.dumps(result, indent=2))
 
 
@@ -161,6 +184,28 @@ def cmd_project_create(org: str, project: str, key_label: str) -> None:
     encoding="utf-8",
   )
   print("Updated CLI config at ~/.voike/config.json to use this project/key.")
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+  target = args.target
+  path = Path(target)
+
+  if path.suffix == ".flow":
+    source = _read_flow_source(target)
+    result = _execute_flow_from_source(source, "auto")
+    print(json.dumps(result, indent=2))
+    return
+
+  if path.suffix == ".py":
+    abs_path = path if path.is_file() else Path.cwd() / target
+    if not abs_path.is_file():
+      raise SystemExit(f"Python file not found: {abs_path}")
+    completed = subprocess.run([sys.executable, str(abs_path)], check=False)
+    if completed.returncode != 0:
+      raise SystemExit(completed.returncode)
+    return
+
+  raise SystemExit("voike run currently supports .py and .flow files.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -233,6 +278,17 @@ def build_parser() -> argparse.ArgumentParser:
   )
   create_project.set_defaults(func=project_create_entry)
 
+  # run <target>
+  run = subparsers.add_parser(
+    "run",
+    help="Run a .flow file through VOIKE or a local .py script",
+  )
+  run.add_argument(
+    "target",
+    help="Target file (e.g. app.flow or app.py)",
+  )
+  run.set_defaults(func=cmd_run)
+
   return parser
 
 
@@ -251,4 +307,3 @@ def main(argv: Optional[list[str]] = None) -> None:
 
 if __name__ == "__main__":
   main(sys.argv[1:])
-
