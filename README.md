@@ -338,6 +338,24 @@ FLOW does not require the host OS to ship every SDK. Instead:
 - `python scripts/rpc.py --grid 5000 --show-segments` – print mesh/cluster summaries, routing metadata, and (optionally) run a split Fibonacci grid job to confirm segments are distributed across nodes.
 - Existing helpers (`voike init`, `voike wrap`, `voike status`, `voike logs`) still ship for scaffolding.
 
+To install the CLI locally so `voike` is available on your PATH:
+
+```bash
+cd cli
+npm install    # once, if deps change
+npm run build  # compile TypeScript into dist/
+npm link       # registers the `voike` binary globally
+```
+
+Once linked, a quick way to create a project + API key via the admin token is:
+
+```bash
+export VOIKE_ADMIN_TOKEN=...  # or ADMIN_TOKEN
+voike create project ios apple
+```
+
+This is equivalent to calling `POST /admin/projects` with `{ "organizationName": "ios", "projectName": "apple", "keyLabel": "primary" }` and will also update `~/.voike/config.json` to use the new project + key.
+
 ## 6.1 SNRL + V-DNS (Phase 1 foundation)
 - `/snrl/resolve` returns a signed endpoint recommendation for any domain using the new FLOW plan `flows/snrl-semantic.flow`. The resolver runs through FLOW → APX → `SnrlService`, so you can iterate on the plan without redeploying binaries.
 - `config/snrl-endpoints.json` seeds the initial POP metadata. Update it or feed from MCP to reflect real POPs.
@@ -490,6 +508,10 @@ These services now live inside the repo so AI agents or ops engineers can build/
 3. **Telemetry**: watch `/metrics`, `/ops/advisories`, `/ai/ops/triage`. AI triage surfaces runbooks.
 4. **Capsules**: create periodic snapshots (`POST /capsules`) before risky deployments.
 5. **Docs**: update `docs/api.md`, `docs/regression_playground.md`, `docs/ai_fabric.md` when adding new endpoints so external teams stay aligned.
+
+For quick checks against different environments:
+- `bash scripts/test_genesis.sh` – runs heartbeat + regression against the Genesis playground using the tokens in `.env`.
+- `bash scripts/test_local.sh` – runs heartbeat + regression against `http://localhost:8080`; set `VOIKE_LOCAL_API_KEY` in `.env` after creating a local project so it uses a local API key instead of the Genesis playground key.
 
 ---
 

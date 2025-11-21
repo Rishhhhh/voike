@@ -12,6 +12,8 @@ import { registerTask } from './commands/task.js';
 import { registerPeacock } from './commands/peacock.js';
 import { registerAgent } from './commands/agent.js';
 import { registerApp } from './commands/app.js';
+import { registerProject } from './commands/project.js';
+import { registerFlow } from './commands/flow.js';
 import { registerJoin } from './commands/join.js';
 import { registerPrint } from './commands/print.js';
 import { registerRun } from './commands/run.js';
@@ -34,5 +36,7 @@ registerTask(program);
 registerPeacock(program);
 registerAgent(program);
 registerApp(program);
+registerProject(program);
+registerFlow(program);
 
 program.parseAsync(process.argv);
