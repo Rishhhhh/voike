@@ -10,10 +10,14 @@ END INPUTS
 # tweak it while learning FLOW and the grid APIs.
 
 STEP submit_job =
-  APX_EXEC "grid.submitFibSplit"
+  APX_EXEC "grid.submitJob"
     WITH {
       "projectId": projectId,
-      "n": fibIndex
+      "jobType": "custom",
+      "payload": {
+        "task": "fib_split",
+        "n": fibIndex
+      }
     }
 
 STEP await_job =
@@ -27,7 +31,7 @@ STEP output =
   OUTPUT_TEXT {
     explanation = "Fibonacci via VOIKE Grid",
     fibIndex = fibIndex,
-    fibValue = await_job.value,
+    fibValue = await_job.result.fib,
     jobId = submit_job.jobId,
     status = await_job.status
   }

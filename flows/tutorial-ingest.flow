@@ -12,24 +12,24 @@ END INPUTS
 STEP ingest_plan =
   APX_EXEC "ingest.prepare"
     WITH {
-      "projectId": projectId,
-      "filePath": datasetPath,
-      "logicalName": logicalName
+      projectId = projectId,
+      filePath = datasetPath,
+      logicalName = logicalName
     }
 
 STEP ingest_run =
   APX_EXEC "ingest.execute"
     WITH {
-      "projectId": projectId,
-      "planId": ingest_plan.planId
+      projectId = projectId,
+      planId = ingest_plan.planId
     }
 
 STEP hybrid_query =
   APX_EXEC "query.runHybrid"
     WITH {
-      "projectId": projectId,
-      "sql": "SELECT * FROM " + ingest_run.table + " LIMIT 5",
-      "semanticText": "quick sample rows from the new dataset"
+      projectId = projectId,
+      sql = "SELECT * FROM " + ingest_run.table + " LIMIT 5",
+      semanticText = "quick sample rows from the new dataset"
     }
 
 STEP summary =
