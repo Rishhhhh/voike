@@ -1,0 +1,91 @@
+FLOW "Agent Registry - Agent Management and Discovery"
+
+DESCRIPTION
+  "Register, discover, and manage AI agents with capabilities"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record agentConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "register":
+      TRANSFORM { "valid": true, "action": "register" }
+    CASE "get":
+      TRANSFORM { "valid": true, "action": "get" }
+    CASE "list":
+      TRANSFORM { "valid": true, "action": "list" }
+    CASE "update":
+      TRANSFORM { "valid": true, "action": "update" }
+    CASE "discover":
+      TRANSFORM { "valid": true, "action": "discover" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "register":
+      APX_EXEC "agent.register"
+        WITH {
+          "projectId": projectId,
+          "agentId": agentConfig.agentId,
+          "name": agentConfig.name,
+          "capabilities": agentConfig.capabilities,
+          "config": agentConfig.config
+        }
+    CASE "get":
+      APX_EXEC "agent.get"
+        WITH {
+          "agentId": agentConfig.agentId
+        }
+    CASE "list":
+      APX_EXEC "agent.list"
+        WITH {
+          "projectId": projectId,
+          "capabilities": agentConfig.capabilities
+        }
+    CASE "update":
+      APX_EXEC "agent.update"
+        WITH {
+          "agentId": agentConfig.agentId,
+          "capabilities": agentConfig.capabilities,
+          "config": agentConfig.config
+        }
+    CASE "discover":
+      APX_EXEC "agent.discover"
+        WITH {
+          "capability": agentConfig.capability,
+          "requirements": agentConfig.requirements
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Index capabilities (if register/update)
+STEP indexCapabilities =
+  IF operation == "register" OR operation == "update"
+    THEN APX_EXEC "irx.updateIndex"
+      WITH {
+        "operation": "index",
+        "documentId": agentConfig.agentId,
+        "content": JSON_STRINGIFY(agentConfig.capabilities),
+        "metadata": { "type": "agent" }
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "indexed": indexCapabilities.success
+  }
+
+END FLOW

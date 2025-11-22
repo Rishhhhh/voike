@@ -1,5 +1,5 @@
 import type { Aggregation, Condition, FlowNodeConfig } from '../ops';
-import type { FlowPlan } from '../types';
+import type { FlowPlan, FlowPlanNode, FlowPlanEdge } from '../types';
 
 export type FlowExecutionMode = 'auto' | 'sync' | 'async';
 
@@ -26,6 +26,63 @@ export interface FlowRuntimeContext {
 type TableRow = Record<string, unknown>;
 type TableData = TableRow[];
 
+function topologicalBatches(nodes: FlowPlanNode[], edges: FlowPlanEdge[]): FlowPlanNode[][] {
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const inDegree = new Map<string, number>();
+  const adjacency = new Map<string, string[]>();
+
+  // Initialize
+  nodes.forEach(node => {
+    inDegree.set(node.id, 0);
+    adjacency.set(node.id, []);
+  });
+
+  // Build graph
+  edges.forEach(edge => {
+    const current = inDegree.get(edge.to) || 0;
+    inDegree.set(edge.to, current + 1);
+    const neighbors = adjacency.get(edge.from) || [];
+    neighbors.push(edge.to);
+    adjacency.set(edge.from, neighbors);
+  });
+
+  const batches: FlowPlanNode[][] = [];
+  const processed = new Set<string>();
+
+  while (processed.size < nodes.length) {
+    const batch: FlowPlanNode[] = [];
+
+    // Find all nodes with in-degree 0 (no dependencies)
+    nodes.forEach(node => {
+      if (!processed.has(node.id) && inDegree.get(node.id) === 0) {
+        batch.push(node);
+      }
+    });
+
+    if (batch.length === 0) {
+      // Circular dependency or isolated nodes
+      const remaining = nodes.filter(n => !processed.has(n.id));
+      if (remaining.length > 0) {
+        batch.push(remaining[0]);
+      }
+    }
+
+    // Mark as processed and reduce in-degree of neighbors
+    batch.forEach(node => {
+      processed.add(node.id);
+      const neighbors = adjacency.get(node.id) || [];
+      neighbors.forEach(neighborId => {
+        const current = inDegree.get(neighborId) || 0;
+        inDegree.set(neighborId, Math.max(0, current - 1));
+      });
+    });
+
+    batches.push(batch);
+  }
+
+  return batches;
+}
+
 export async function executeFlowPlan(
   plan: FlowPlan,
   inputs: Record<string, unknown>,
@@ -48,20 +105,35 @@ export async function executeFlowPlan(
   let lastResultKey: string | null = null;
   const runtimeContext: FlowRuntimeContext = { ...context, runId: context?.runId || plan.id };
 
-  for (const node of plan.graph.nodes) {
-    const config = node.meta?.config;
-    if (!config) {
-      continue;
-    }
-    const stepName = node.outputs[0] ?? node.meta?.stepName ?? node.id;
-    const result = await executeNode(config, state, inputs, runtimeContext, stepName);
-    state[stepName] = result;
-    lastResultKey = stepName;
-    executedNodes += 1;
+  // Parallel execution: batch nodes by dependencies
+  const batches = topologicalBatches(plan.graph.nodes, plan.graph.edges);
 
-    if (config.kind === 'OUTPUT') {
-      labeledOutputs[config.label] = result;
-    }
+  for (const batch of batches) {
+    // Execute all nodes in this batch in parallel
+    const batchResults = await Promise.all(
+      batch.map(async (node) => {
+        const config = node.meta?.config;
+        if (!config) {
+          return { stepName: null, result: null };
+        }
+        const stepName = node.outputs[0] ?? node.meta?.stepName ?? node.id;
+        const result = await executeNode(config, state, inputs, runtimeContext, stepName);
+        return { stepName, result, config };
+      })
+    );
+
+    // Update state with batch results
+    batchResults.forEach(({ stepName, result, config }) => {
+      if (stepName) {
+        state[stepName] = result;
+        lastResultKey = stepName;
+        executedNodes += 1;
+
+        if (config && config.kind === 'OUTPUT') {
+          labeledOutputs[config.label] = result;
+        }
+      }
+    });
   }
 
   const outputs =
@@ -137,6 +209,45 @@ async function executeNode(
         );
       }
       return { service: serviceName, endpoint: `/s/${serviceName}`, vpkgId: resolvedId };
+    }
+    case 'CALL_FLOW': {
+      // Load and execute another flow
+      const fs = require('fs');
+      const path = require('path');
+      const { parseFlowSource, buildFlowPlan } = require('../index');
+
+      const flowPath = path.resolve(process.cwd(), config.flowPath);
+      if (!fs.existsSync(flowPath)) {
+        throw new Error(`Flow not found: ${config.flowPath}`);
+      }
+
+      const flowSource = fs.readFileSync(flowPath, 'utf-8');
+      const parseResult = parseFlowSource(flowSource);
+      if (!parseResult.ok || !parseResult.ast) {
+        throw new Error(`Failed to parse flow: ${config.flowPath}`);
+      }
+
+      const plan = buildFlowPlan(parseResult.ast);
+      const flowInputs = resolveLiteral(config.inputs || {}, state, inputs);
+
+      // Recursively execute the called flow
+      const result = await executeFlowPlan(
+        { ...plan, id: `call-${plan.id}`, createdAt: new Date().toISOString() },
+        flowInputs as Record<string, unknown>,
+        'sync',
+        context
+      );
+
+      return result.outputs;
+    }
+    case 'RUN_VASM': {
+      // VASM execution - for now return stub, will implement syscalls next
+      return {
+        program: config.program,
+        inputs: config.inputs,
+        status: 'executed',
+        message: 'VASM execution (stub - syscalls coming next)'
+      };
     }
     case 'OUTPUT':
       return resolveDataset(config.source, state, inputs);

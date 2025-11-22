@@ -1,0 +1,58 @@
+FLOW "SNRL - Semantic Network Reasoning Layer"
+
+DESCRIPTION
+  "Semantic reasoning and knowledge graph operations"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record query
+  text projectId
+END INPUTS
+
+# Step 1: Parse semantic query
+STEP parse =
+  APX_EXEC "snrl.parse"
+    WITH {
+      "query": query,
+      "operation": operation
+    }
+
+# Step 2: Build knowledge graph
+STEP buildGraph =
+  APX_EXEC "snrl.buildGraph"
+    WITH {
+      "entities": parse.entities,
+      "relations": parse.relations,
+      "projectId": projectId
+    }
+
+# Step 3: Reason over graph
+STEP reason =
+  APX_EXEC "snrl.reason"
+    WITH {
+      "graph": buildGraph.graph,
+      "rules": query.rules,
+      "depth": query.depth
+    }
+
+# Step 4: Extract insights
+STEP insights =
+  APX_EXEC "snrl.insights"
+    WITH {
+      "reasoning": reason.results,
+      "threshold": query.threshold
+    }
+
+# Step 5: Return results
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "entities": parse.entities,
+    "relations": parse.relations,
+    "reasoning": reason.results,
+    "insights": insights.insights,
+    "confidence": insights.confidence
+  }
+
+END FLOW

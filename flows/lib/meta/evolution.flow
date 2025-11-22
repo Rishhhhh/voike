@@ -1,0 +1,106 @@
+FLOW "Evolution Agent - Self-Improving System"
+
+DESCRIPTION
+  "Enables agents to analyze, modify, and improve FLOW files autonomously"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  text targetFlow
+  record context
+  text projectId
+  text runId
+END INPUTS
+
+# Step 1: Analyze current FLOW
+STEP analyze =
+  APX_EXEC "fs.readFile"
+    WITH {
+      "path": targetFlow
+    }
+
+# Step 2: Ask AI for improvements
+STEP improve =
+  APX_EXEC "ai.ask"
+    WITH {
+      "prompt": CONCAT(
+        "Analyze this FLOW file and suggest improvements:\n\n",
+        analyze.content,
+        "\n\nOperation: ", operation,
+        "\nContext: ", JSON_STRINGIFY(context)
+      ),
+      "model": "gpt-4"
+    }
+
+# Step 3: Generate new FLOW
+STEP generate =
+  APX_EXEC "ai.ask"
+    WITH {
+      "prompt": CONCAT(
+        "Generate improved FLOW based on this analysis:\n\n",
+        improve.response,
+        "\n\nOriginal FLOW:\n",
+        analyze.content
+      ),
+      "model": "gpt-4"
+    }
+
+# Step 4: Validate new FLOW
+STEP validate =
+  APX_EXEC "flow.validate"
+    WITH {
+      "source": generate.response
+    }
+
+# Step 5: Create backup
+STEP backup =
+  APX_EXEC "fs.writeFile"
+    WITH {
+      "path": CONCAT(targetFlow, ".backup"),
+      "content": analyze.content
+    }
+
+# Step 6: Write improved FLOW
+STEP write =
+  APX_EXEC "fs.writeFile"
+    WITH {
+      "path": targetFlow,
+      "content": generate.response
+    }
+
+# Step 7: Test new FLOW
+STEP test =
+  CALL_FLOW targetFlow
+    WITH context
+
+# Step 8: Record evolution
+STEP record =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "flow_evolutions",
+      "data": {
+        "project_id": projectId,
+        "run_id": runId,
+        "target_flow": targetFlow,
+        "operation": operation,
+        "old_content": analyze.content,
+        "new_content": generate.response,
+        "analysis": improve.response,
+        "test_result": test.outputs,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 9: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "evolved": true,
+    "targetFlow": targetFlow,
+    "analysis": improve.response,
+    "testResult": test.outputs,
+    "evolutionId": record.id,
+    "backupPath": CONCAT(targetFlow, ".backup")
+  }
+
+END FLOW

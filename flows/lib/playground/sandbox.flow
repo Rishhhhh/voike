@@ -1,0 +1,84 @@
+FLOW "Playground - Sandbox Environment"
+
+DESCRIPTION
+  "Isolated sandbox environment for testing and experimentation"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record playgroundConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "create":
+      TRANSFORM { "valid": true, "action": "create" }
+    CASE "execute":
+      TRANSFORM { "valid": true, "action": "execute" }
+    CASE "reset":
+      TRANSFORM { "valid": true, "action": "reset" }
+    CASE "destroy":
+      TRANSFORM { "valid": true, "action": "destroy" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "create":
+      APX_EXEC "playground.create"
+        WITH {
+          "projectId": projectId,
+          "sandboxId": playgroundConfig.sandboxId,
+          "template": playgroundConfig.template,
+          "resources": playgroundConfig.resources,
+          "timeout": playgroundConfig.timeout
+        }
+    CASE "execute":
+      APX_EXEC "playground.execute"
+        WITH {
+          "sandboxId": playgroundConfig.sandboxId,
+          "code": playgroundConfig.code,
+          "language": playgroundConfig.language,
+          "input": playgroundConfig.input
+        }
+    CASE "reset":
+      APX_EXEC "playground.reset"
+        WITH {
+          "sandboxId": playgroundConfig.sandboxId
+        }
+    CASE "destroy":
+      APX_EXEC "playground.destroy"
+        WITH {
+          "sandboxId": playgroundConfig.sandboxId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Log activity
+STEP logActivity =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "playground_activity",
+      "data": {
+        "project_id": projectId,
+        "sandbox_id": playgroundConfig.sandboxId,
+        "operation": operation,
+        "result": execute.result,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result
+  }
+
+END FLOW

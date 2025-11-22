@@ -1,0 +1,88 @@
+FLOW "Edge Compute - Distributed Edge Operations"
+
+DESCRIPTION
+  "Edge computing for distributed execution and load balancing"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record edgeConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "deploy":
+      TRANSFORM { "valid": true, "action": "deploy" }
+    CASE "execute":
+      TRANSFORM { "valid": true, "action": "execute" }
+    CASE "status":
+      TRANSFORM { "valid": true, "action": "status" }
+    CASE "scale":
+      TRANSFORM { "valid": true, "action": "scale" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Select edge nodes
+STEP selectNodes =
+  APX_EXEC "edge.selectNodes"
+    WITH {
+      "region": edgeConfig.region,
+      "count": edgeConfig.nodeCount,
+      "requirements": edgeConfig.requirements
+    }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "deploy":
+      APX_EXEC "edge.deploy"
+        WITH {
+          "projectId": projectId,
+          "nodes": selectNodes.nodes,
+          "code": edgeConfig.code,
+          "config": edgeConfig.config
+        }
+    CASE "execute":
+      APX_EXEC "edge.execute"
+        WITH {
+          "deploymentId": edgeConfig.deploymentId,
+          "input": edgeConfig.input,
+          "nodes": selectNodes.nodes
+        }
+    CASE "status":
+      APX_EXEC "edge.getStatus"
+        WITH {
+          "deploymentId": edgeConfig.deploymentId
+        }
+    CASE "scale":
+      APX_EXEC "edge.scale"
+        WITH {
+          "deploymentId": edgeConfig.deploymentId,
+          "targetNodes": edgeConfig.targetNodes
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Monitor performance
+STEP monitor =
+  APX_EXEC "edge.monitor"
+    WITH {
+      "deploymentId": execute.result.deploymentId,
+      "metrics": ["latency", "throughput", "errors"]
+    }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "nodes": selectNodes.nodes,
+    "metrics": monitor.metrics
+  }
+
+END FLOW

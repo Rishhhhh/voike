@@ -1,0 +1,84 @@
+FLOW "Package Registry - FLOW Package Management"
+
+DESCRIPTION
+  "Manage FLOW packages, versions, and dependencies"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record packageConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "publish":
+      TRANSFORM { "valid": true, "action": "publish" }
+    CASE "install":
+      TRANSFORM { "valid": true, "action": "install" }
+    CASE "search":
+      TRANSFORM { "valid": true, "action": "search" }
+    CASE "info":
+      TRANSFORM { "valid": true, "action": "info" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "publish":
+      APX_EXEC "vpkg.publish"
+        WITH {
+          "projectId": projectId,
+          "name": packageConfig.name,
+          "version": packageConfig.version,
+          "flows": packageConfig.flows,
+          "dependencies": packageConfig.dependencies,
+          "metadata": packageConfig.metadata
+        }
+    CASE "install":
+      APX_EXEC "vpkg.install"
+        WITH {
+          "projectId": projectId,
+          "packageName": packageConfig.packageName,
+          "version": packageConfig.version
+        }
+    CASE "search":
+      APX_EXEC "vpkg.search"
+        WITH {
+          "query": packageConfig.query,
+          "tags": packageConfig.tags,
+          "limit": packageConfig.limit
+        }
+    CASE "info":
+      APX_EXEC "vpkg.getInfo"
+        WITH {
+          "packageName": packageConfig.packageName,
+          "version": packageConfig.version
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Resolve dependencies (if installing)
+STEP resolveDeps =
+  IF operation == "install"
+    THEN APX_EXEC "vpkg.resolveDependencies"
+      WITH {
+        "packageName": packageConfig.packageName,
+        "version": packageConfig.version
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "dependencies": resolveDeps.dependencies
+  }
+
+END FLOW

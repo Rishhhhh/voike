@@ -1,0 +1,95 @@
+FLOW "Capsules - Container Management"
+
+DESCRIPTION
+  "Container and capsule management for isolated execution environments"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record capsuleConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "create":
+      TRANSFORM { "valid": true, "action": "create" }
+    CASE "start":
+      TRANSFORM { "valid": true, "action": "start" }
+    CASE "stop":
+      TRANSFORM { "valid": true, "action": "stop" }
+    CASE "snapshot":
+      TRANSFORM { "valid": true, "action": "snapshot" }
+    CASE "restore":
+      TRANSFORM { "valid": true, "action": "restore" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "create":
+      APX_EXEC "capsule.create"
+        WITH {
+          "projectId": projectId,
+          "capsuleId": capsuleConfig.capsuleId,
+          "manifest": capsuleConfig.manifest,
+          "resources": capsuleConfig.resources
+        }
+    CASE "start":
+      APX_EXEC "capsule.start"
+        WITH {
+          "capsuleId": capsuleConfig.capsuleId,
+          "entrypoint": capsuleConfig.entrypoint,
+          "env": capsuleConfig.env
+        }
+    CASE "stop":
+      APX_EXEC "capsule.stop"
+        WITH {
+          "capsuleId": capsuleConfig.capsuleId,
+          "graceful": capsuleConfig.graceful
+        }
+    CASE "snapshot":
+      APX_EXEC "capsule.snapshot"
+        WITH {
+          "capsuleId": capsuleConfig.capsuleId,
+          "snapshotId": capsuleConfig.snapshotId,
+          "includeState": capsuleConfig.includeState
+        }
+    CASE "restore":
+      APX_EXEC "capsule.restore"
+        WITH {
+          "capsuleId": capsuleConfig.capsuleId,
+          "snapshotId": capsuleConfig.snapshotId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Update IRX index
+STEP updateIndex =
+  APX_EXEC "irx.upsertObject"
+    WITH {
+      "objectId": capsuleConfig.capsuleId,
+      "kind": "capsule",
+      "projectId": projectId,
+      "metrics": {
+        "utility": execute.metrics.utility,
+        "locality": execute.metrics.locality,
+        "resilience": execute.metrics.resilience,
+        "cost": execute.metrics.cost,
+        "energy": execute.metrics.energy
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result
+  }
+
+END FLOW

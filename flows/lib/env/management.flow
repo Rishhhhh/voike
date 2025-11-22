@@ -1,0 +1,88 @@
+FLOW "Environment Management - Config and Secrets"
+
+DESCRIPTION
+  "Manage environment configuration, variables, and secrets"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record envConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "create":
+      TRANSFORM { "valid": true, "action": "create" }
+    CASE "get":
+      TRANSFORM { "valid": true, "action": "get" }
+    CASE "update":
+      TRANSFORM { "valid": true, "action": "update" }
+    CASE "delete":
+      TRANSFORM { "valid": true, "action": "delete" }
+    CASE "list":
+      TRANSFORM { "valid": true, "action": "list" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "create":
+      APX_EXEC "env.create"
+        WITH {
+          "projectId": projectId,
+          "name": envConfig.name,
+          "variables": envConfig.variables,
+          "secrets": envConfig.secrets,
+          "isProduction": envConfig.isProduction
+        }
+    CASE "get":
+      APX_EXEC "env.get"
+        WITH {
+          "envId": envConfig.envId,
+          "projectId": projectId
+        }
+    CASE "update":
+      APX_EXEC "env.update"
+        WITH {
+          "envId": envConfig.envId,
+          "variables": envConfig.variables,
+          "secrets": envConfig.secrets
+        }
+    CASE "delete":
+      APX_EXEC "env.delete"
+        WITH {
+          "envId": envConfig.envId,
+          "projectId": projectId
+        }
+    CASE "list":
+      APX_EXEC "env.list"
+        WITH {
+          "projectId": projectId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Encrypt secrets (if applicable)
+STEP encrypt =
+  IF operation == "create" OR operation == "update"
+    THEN APX_EXEC "env.encryptSecrets"
+      WITH {
+        "secrets": envConfig.secrets
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "encrypted": encrypt.success
+  }
+
+END FLOW

@@ -1,0 +1,85 @@
+FLOW "Trust - Security and Identity Management"
+
+DESCRIPTION
+  "Trust establishment, identity verification, and security policies"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record trustConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "verify":
+      TRANSFORM { "valid": true, "action": "verify" }
+    CASE "establish":
+      TRANSFORM { "valid": true, "action": "establish" }
+    CASE "revoke":
+      TRANSFORM { "valid": true, "action": "revoke" }
+    CASE "policy":
+      TRANSFORM { "valid": true, "action": "policy" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "verify":
+      APX_EXEC "trust.verify"
+        WITH {
+          "nodeId": trustConfig.nodeId,
+          "credentials": trustConfig.credentials,
+          "challenge": trustConfig.challenge
+        }
+    CASE "establish":
+      APX_EXEC "trust.establish"
+        WITH {
+          "nodeId": trustConfig.nodeId,
+          "publicKey": trustConfig.publicKey,
+          "attestation": trustConfig.attestation
+        }
+    CASE "revoke":
+      APX_EXEC "trust.revoke"
+        WITH {
+          "nodeId": trustConfig.nodeId,
+          "reason": trustConfig.reason
+        }
+    CASE "policy":
+      APX_EXEC "trust.setPolicy"
+        WITH {
+          "projectId": projectId,
+          "policy": trustConfig.policy,
+          "enforcement": trustConfig.enforcement
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Log security event
+STEP logEvent =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "trust_events",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "node_id": trustConfig.nodeId,
+        "result": execute.result,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "eventId": logEvent.id
+  }
+
+END FLOW

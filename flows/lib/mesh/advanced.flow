@@ -1,0 +1,88 @@
+FLOW "Hypermesh - Advanced Mesh Networking"
+
+DESCRIPTION
+  "Advanced mesh features with topology optimization and resilience"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record hypermeshConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "optimize":
+      TRANSFORM { "valid": true, "action": "optimize" }
+    CASE "heal":
+      TRANSFORM { "valid": true, "action": "heal" }
+    CASE "partition":
+      TRANSFORM { "valid": true, "action": "partition" }
+    CASE "metrics":
+      TRANSFORM { "valid": true, "action": "metrics" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Analyze current topology
+STEP analyzeTopology =
+  APX_EXEC "hypermesh.analyzeTopology"
+    WITH {
+      "includeMetrics": true,
+      "depth": hypermeshConfig.depth
+    }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "optimize":
+      APX_EXEC "hypermesh.optimize"
+        WITH {
+          "topology": analyzeTopology.topology,
+          "objective": hypermeshConfig.objective,
+          "constraints": hypermeshConfig.constraints
+        }
+    CASE "heal":
+      APX_EXEC "hypermesh.heal"
+        WITH {
+          "topology": analyzeTopology.topology,
+          "failedNodes": hypermeshConfig.failedNodes,
+          "strategy": hypermeshConfig.strategy
+        }
+    CASE "partition":
+      APX_EXEC "hypermesh.partition"
+        WITH {
+          "topology": analyzeTopology.topology,
+          "partitions": hypermeshConfig.partitions,
+          "balanceMetric": hypermeshConfig.balanceMetric
+        }
+    CASE "metrics":
+      APX_EXEC "hypermesh.getMetrics"
+        WITH {
+          "topology": analyzeTopology.topology,
+          "metrics": hypermeshConfig.metrics
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Apply changes (if optimize/heal)
+STEP applyChanges =
+  IF operation == "optimize" OR operation == "heal"
+    THEN APX_EXEC "hypermesh.applyChanges"
+      WITH {
+        "changes": execute.changes
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "applied": applyChanges.success
+  }
+
+END FLOW

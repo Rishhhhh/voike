@@ -10,13 +10,13 @@ export type VDBQuery = {
   filters?: Record<string, unknown>;
   graph?: { fromId?: string; depth?: number };
   target?:
-    | 'sql'
-    | 'doc'
-    | 'vector'
-    | 'kv'
-    | 'graph'
-    | 'timeseries'
-    | 'auto';
+  | 'sql'
+  | 'doc'
+  | 'vector'
+  | 'kv'
+  | 'graph'
+  | 'timeseries'
+  | 'auto';
 };
 
 export type VDBResult = {
@@ -30,7 +30,7 @@ export type VDBResult = {
 };
 
 export class VDBClient {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) { }
 
   async ensureBaseSchema() {
     await this.pool.query(`CREATE EXTENSION IF NOT EXISTS vector`);
@@ -50,10 +50,7 @@ export class VDBClient {
       [DEFAULT_PROJECT_ID],
     );
     await this.pool.query(
-      `CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project ON ingest_jobs(project_id);`,
-    );
-    await this.pool.query(
-      `CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project ON ingest_jobs(project_id);`,
+      `CREATE INDEX IF NOT EXISTS idx_ingest_jobs_project_time ON ingest_jobs(project_id, created_at DESC);`,
     );
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS embeddings (
@@ -103,8 +100,7 @@ export class VDBClient {
     const start = Date.now();
     const typeFilter = filters?.entity_type;
     const { rows } = await this.pool.query(
-      `SELECT metadata FROM embeddings WHERE metadata->>'text' ILIKE $1 ${
-        typeFilter ? "AND entity_type = $2" : ''
+      `SELECT metadata FROM embeddings WHERE metadata->>'text' ILIKE $1 ${typeFilter ? "AND entity_type = $2" : ''
       } LIMIT 50`,
       typeFilter ? [`%${text}%`, typeFilter] : [`%${text}%`],
     );
@@ -167,17 +163,22 @@ export class VDBClient {
   async insertRows(table: string, rows: Record<string, unknown>[]) {
     if (!rows.length) return;
     const columns = Object.keys(rows[0]);
-    const values = rows
-      .map(
-        (row, rowIndex) =>
-          `(${columns
-            .map((_, colIndex) => `$${rowIndex * columns.length + colIndex + 1}`)
-            .join(', ')})`,
-      )
-      .join(', ');
-    const params = rows.flatMap((row) => columns.map((col) => row[col]));
-    const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${values}`;
-    await this.pool.query(sql, params);
+    const BATCH_SIZE = 1000;
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const values = batch
+        .map(
+          (row, rowIndex) =>
+            `(${columns
+              .map((_, colIndex) => `$${rowIndex * columns.length + colIndex + 1}`)
+              .join(', ')})`,
+        )
+        .join(', ');
+      const params = batch.flatMap((row) => columns.map((col) => row[col]));
+      const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${values}`;
+      await this.pool.query(sql, params);
+    }
   }
 
   async upsertKv(key: string, value: Record<string, unknown>) {

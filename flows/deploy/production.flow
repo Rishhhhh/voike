@@ -1,0 +1,80 @@
+FLOW "Deploy to Production"
+
+INPUTS
+  text environment
+  text version
+END INPUTS
+
+STEP build =
+  CALL FLOW "flows/build/compile.flow"
+    WITH {
+      "target": "production"
+    }
+
+STEP test =
+  CALL FLOW "flows/test/suite.flow"
+    WITH {
+      "mode": "full"
+    }
+
+STEP create_vpkg =
+  APX_EXEC "vpkg.create"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "name": "voike-core",
+      "version": version,
+      "services": ["api", "gateway", "apix", "ai-fabric"]
+    }
+
+STEP deploy_database =
+  APX_EXEC "infra.ensureDatabase"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "targetEnv": environment
+    }
+
+STEP deploy_services =
+  CALL FLOW "flows/lib/infra/vvm.flow"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "vpkgId": create_vpkg.vpkgId,
+      "serviceName": "voike-core",
+      "env": environment
+    }
+
+STEP run_migrations =
+  APX_EXEC "db.runMigrations"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "environment": environment
+    }
+
+STEP health_check =
+  APX_EXEC "infra.healthCheck"
+    WITH {
+      "endpoints": deploy_services.endpoint,
+      "timeout": 60000,
+      "retries": 3
+    }
+
+STEP smoke_tests =
+  APX_EXEC "test.runSmoke"
+    WITH {
+      "environment": environment,
+      "endpoint": deploy_services.endpoint
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "🚀 VOIKE Deployed to " + environment + "\\n" +
+    "================================\\n" +
+    "Version: " + version + "\\n" +
+    "VPKG: " + create_vpkg.vpkgId + "\\n" +
+    "Endpoint: " + deploy_services.endpoint + "\\n" +
+    "Health: " + health_check.status + "\\n" +
+    "Smoke Tests: " + smoke_tests.passed + "/" + smoke_tests.total + "\\n" +
+    "================================\\n" +
+    "Status: LIVE ✅"
+  )
+
+END FLOW

@@ -1,0 +1,87 @@
+FLOW "Kernel9 - Core System Primitives"
+
+DESCRIPTION
+  "Core kernel operations and system-level primitives"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record kernelConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "execute":
+      TRANSFORM { "valid": true, "action": "execute" }
+    CASE "query":
+      TRANSFORM { "valid": true, "action": "query" }
+    CASE "transform":
+      TRANSFORM { "valid": true, "action": "transform" }
+    CASE "aggregate":
+      TRANSFORM { "valid": true, "action": "aggregate" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "execute":
+      APX_EXEC "kernel.execute"
+        WITH {
+          "projectId": projectId,
+          "command": kernelConfig.command,
+          "args": kernelConfig.args,
+          "context": kernelConfig.context
+        }
+    CASE "query":
+      APX_EXEC "kernel.query"
+        WITH {
+          "projectId": projectId,
+          "sql": kernelConfig.sql,
+          "params": kernelConfig.params
+        }
+    CASE "transform":
+      APX_EXEC "kernel.transform"
+        WITH {
+          "projectId": projectId,
+          "input": kernelConfig.input,
+          "transformation": kernelConfig.transformation
+        }
+    CASE "aggregate":
+      APX_EXEC "kernel.aggregate"
+        WITH {
+          "projectId": projectId,
+          "data": kernelConfig.data,
+          "groupBy": kernelConfig.groupBy,
+          "aggregations": kernelConfig.aggregations
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Log operation
+STEP log =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "kernel_operations",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "config": kernelConfig,
+        "result": execute.result,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result
+  }
+
+END FLOW

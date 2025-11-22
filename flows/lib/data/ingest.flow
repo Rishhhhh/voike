@@ -1,0 +1,55 @@
+FLOW "Universal Ingestion"
+
+INPUTS
+  text projectId
+  text sourceId
+  text format
+  text data
+END INPUTS
+
+STEP detect_format =
+  APX_EXEC "uie.detectFormat"
+    WITH {
+      "projectId": projectId,
+      "data": data,
+      "hint": format
+    }
+
+STEP parse_data =
+  APX_EXEC "uie.parse"
+    WITH {
+      "projectId": projectId,
+      "data": data,
+      "format": detect_format.format
+    }
+
+STEP infer_schema =
+  APX_EXEC "ingestion.inferSchema"
+    WITH {
+      "projectId": projectId,
+      "sample": parse_data.rows
+    }
+
+STEP insert_rows =
+  APX_EXEC "vdb.insertRows"
+    WITH {
+      "projectId": projectId,
+      "rows": parse_data.rows,
+      "schema": infer_schema.schema
+    }
+
+STEP record_lineage =
+  APX_EXEC "ingestion.recordLineage"
+    WITH {
+      "projectId": projectId,
+      "sourceId": sourceId,
+      "rowCount": insert_rows.count,
+      "format": detect_format.format
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "✅ Ingested " + insert_rows.count + " rows from " + detect_format.format + " source"
+  )
+
+END FLOW

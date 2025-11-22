@@ -1,0 +1,63 @@
+FLOW "Agent Runtime - Execute Agents"
+
+DESCRIPTION
+  "Runtime for executing AI agents with context and state management"
+END DESCRIPTION
+
+INPUTS
+  text agentName
+  record payload
+  text projectId
+  text runId
+END INPUTS
+
+# Step 1: Validate agent exists
+STEP validate =
+  APX_EXEC "agent.validate"
+    WITH {
+      "agentName": agentName
+    }
+
+# Step 2: Prepare context
+STEP context =
+  TRANSFORM {
+    "projectId": projectId,
+    "runId": runId,
+    "timestamp": CURRENT_TIMESTAMP(),
+    "agentName": agentName
+  }
+
+# Step 3: Execute agent
+STEP execute =
+  APX_EXEC "agent.execute"
+    WITH {
+      "agentName": agentName,
+      "payload": payload,
+      "context": context.output
+    }
+
+# Step 4: Record execution
+STEP record =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "agent_executions",
+      "data": {
+        "project_id": projectId,
+        "run_id": runId,
+        "agent_name": agentName,
+        "payload": payload,
+        "result": execute.result,
+        "created_at": context.output.timestamp
+      }
+    }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "result": execute.result,
+    "executionId": record.id,
+    "timestamp": context.output.timestamp
+  }
+
+END FLOW

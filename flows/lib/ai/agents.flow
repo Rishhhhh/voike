@@ -1,0 +1,78 @@
+FLOW "Agent Orchestration - Full Pipeline"
+
+INPUTS
+  text projectId
+  text question
+  number maxSegments
+END INPUTS
+
+STEP split =
+  APX_EXEC "agent.split"
+    WITH {
+      "projectId": projectId,
+      "question": question,
+      "maxSegments": maxSegments
+    }
+
+STEP reasoning =
+  APX_EXEC "agent.runSegment"
+    WITH {
+      "projectId": projectId,
+      "role": "reasoning",
+      "segment": split.segments[0],
+      "question": question,
+      "taskId": split.taskId
+    }
+
+STEP facts =
+  APX_EXEC "agent.runSegment"
+    WITH {
+      "projectId": projectId,
+      "role": "facts",
+      "segment": split.segments[1],
+      "question": question,
+      "taskId": split.taskId
+    }
+
+STEP code =
+  APX_EXEC "agent.runSegment"
+    WITH {
+      "projectId": projectId,
+      "role": "code",
+      "segment": split.segments[2],
+      "question": question,
+      "taskId": split.taskId
+    }
+
+STEP critique =
+  APX_EXEC "agent.runSegment"
+    WITH {
+      "projectId": projectId,
+      "role": "critique",
+      "segment": split.segments[3],
+      "question": question,
+      "taskId": split.taskId,
+      "inputs": {
+        "reasoning": reasoning.answer,
+        "code": code.answer
+      }
+    }
+
+STEP stitch =
+  APX_EXEC "agent.stitch"
+    WITH {
+      "projectId": projectId,
+      "question": question,
+      "taskId": split.taskId,
+      "parts": [
+        { "id": "reasoning", "answer": reasoning.answer },
+        { "id": "facts", "answer": facts.answer },
+        { "id": "code", "answer": code.answer },
+        { "id": "critique", "answer": critique.answer }
+      ]
+    }
+
+STEP output =
+  OUTPUT_TEXT stitch.answer AS "final_answer"
+
+END FLOW

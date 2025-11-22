@@ -1,11 +1,11 @@
 """
-VOIKE Python helpers.
-
-This package exposes a small CLI (`voike`) that talks to the same HTTP
-API used by the Node CLI. It is intentionally minimal and focuses on
-FLOW + project bootstrap flows.
+VOIKE - The FLOW-Native AI Platform
+Everything runs through FLOW.
 """
 
-__all__ = ["__version__"]
-__version__ = "0.1.0"
+__version__ = "3.0.1"
+__author__ = "VOIKE Team"
 
+from .flow_runner import FlowRunner
+
+__all__ = ["FlowRunner"]

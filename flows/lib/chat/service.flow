@@ -1,0 +1,87 @@
+FLOW "Chat - Conversational Interface"
+
+DESCRIPTION
+  "Chat service for conversational AI and message management"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record chatConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "send":
+      TRANSFORM { "valid": true, "action": "send" }
+    CASE "history":
+      TRANSFORM { "valid": true, "action": "history" }
+    CASE "createSession":
+      TRANSFORM { "valid": true, "action": "createSession" }
+    CASE "deleteSession":
+      TRANSFORM { "valid": true, "action": "deleteSession" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "send":
+      APX_EXEC "chat.send"
+        WITH {
+          "sessionId": chatConfig.sessionId,
+          "message": chatConfig.message,
+          "userId": chatConfig.userId,
+          "context": chatConfig.context
+        }
+    CASE "history":
+      APX_EXEC "chat.getHistory"
+        WITH {
+          "sessionId": chatConfig.sessionId,
+          "limit": chatConfig.limit,
+          "offset": chatConfig.offset
+        }
+    CASE "createSession":
+      APX_EXEC "chat.createSession"
+        WITH {
+          "projectId": projectId,
+          "userId": chatConfig.userId,
+          "metadata": chatConfig.metadata
+        }
+    CASE "deleteSession":
+      APX_EXEC "chat.deleteSession"
+        WITH {
+          "sessionId": chatConfig.sessionId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Generate AI response (if send)
+STEP generateResponse =
+  IF operation == "send"
+    THEN CALL_FLOW "flows/lib/ai/gpt.flow"
+      WITH {
+        "operation": "chat",
+        "gptConfig": {
+          "model": chatConfig.model,
+          "messages": execute.messages,
+          "maxTokens": chatConfig.maxTokens,
+          "temperature": chatConfig.temperature
+        },
+        "projectId": projectId
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "response": generateResponse.result
+  }
+
+END FLOW

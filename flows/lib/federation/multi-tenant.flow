@@ -1,0 +1,83 @@
+FLOW "Federation - Multi-Tenant Management"
+
+DESCRIPTION
+  "Multi-tenant isolation, resource partitioning, and cross-tenant operations"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record federationConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "createTenant":
+      TRANSFORM { "valid": true, "action": "createTenant" }
+    CASE "isolate":
+      TRANSFORM { "valid": true, "action": "isolate" }
+    CASE "partition":
+      TRANSFORM { "valid": true, "action": "partition" }
+    CASE "crossTenant":
+      TRANSFORM { "valid": true, "action": "crossTenant" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "createTenant":
+      APX_EXEC "federation.createTenant"
+        WITH {
+          "tenantId": federationConfig.tenantId,
+          "name": federationConfig.name,
+          "quota": federationConfig.quota,
+          "isolation": federationConfig.isolation
+        }
+    CASE "isolate":
+      APX_EXEC "federation.isolate"
+        WITH {
+          "tenantId": federationConfig.tenantId,
+          "resources": federationConfig.resources,
+          "level": federationConfig.level
+        }
+    CASE "partition":
+      APX_EXEC "federation.partition"
+        WITH {
+          "tenantId": federationConfig.tenantId,
+          "resourceType": federationConfig.resourceType,
+          "allocation": federationConfig.allocation
+        }
+    CASE "crossTenant":
+      APX_EXEC "federation.crossTenant"
+        WITH {
+          "sourceTenant": federationConfig.sourceTenant,
+          "targetTenant": federationConfig.targetTenant,
+          "operation": federationConfig.operation,
+          "permissions": federationConfig.permissions
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Enforce policies
+STEP enforcePolicies =
+  APX_EXEC "federation.enforcePolicies"
+    WITH {
+      "tenantId": federationConfig.tenantId,
+      "operation": operation,
+      "result": execute.result
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "policiesEnforced": enforcePolicies.policies
+  }
+
+END FLOW

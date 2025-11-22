@@ -1,0 +1,69 @@
+FLOW "VOIKE Bootstrap - Pure FLOW"
+
+INPUTS
+  text environment
+END INPUTS
+
+STEP ensure_db =
+  APX_EXEC "infra.ensureDatabase"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "targetEnv": environment
+    }
+
+STEP ensure_kernel8 =
+  APX_EXEC "kernel.ensureKernel8"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "config": {
+        "energyLimits": { "query": 1000, "ai": 2000 },
+        "daiEnabled": true
+      }
+    }
+
+STEP ensure_kernel9 =
+  APX_EXEC "kernel.ensureKernel9"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001",
+      "config": {
+        "metaPlanning": true,
+        "ledgerTracing": true
+      }
+    }
+
+STEP load_flow_library =
+  APX_EXEC "flow.loadLibrary"
+    WITH {
+      "path": "flows/lib",
+      "recursive": true
+    }
+
+STEP register_core_flows =
+  APX_EXEC "flow.registerCoreFlows"
+    WITH {
+      "flows": [
+        "flows/lib/data/ingest.flow",
+        "flows/lib/data/query.flow",
+        "flows/lib/ai/agents.flow",
+        "flows/lib/infra/vvm.flow"
+      ]
+    }
+
+STEP start_monitoring =
+  APX_EXEC "meta.startMonitoring"
+    WITH {
+      "interval": 60000,
+      "metrics": ["cpu", "memory", "flows", "agents"]
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "🌊 VOIKE Bootstrap Complete\\n" +
+    "Environment: " + environment + "\\n" +
+    "Kernel8: " + ensure_kernel8.status + "\\n" +
+    "Kernel9: " + ensure_kernel9.status + "\\n" +
+    "FLOW Library: " + load_flow_library.count + " flows loaded\\n" +
+    "Status: READY"
+  )
+
+END FLOW

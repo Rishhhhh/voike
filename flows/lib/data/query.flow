@@ -1,0 +1,42 @@
+FLOW "Hybrid Query Engine"
+
+INPUTS
+  text projectId
+  text query
+  text mode
+END INPUTS
+
+STEP parse_query =
+  APX_EXEC "query.parse"
+    WITH {
+      "projectId": projectId,
+      "query": query
+    }
+
+STEP sql_query =
+  APX_EXEC "vdb.sqlQuery"
+    WITH {
+      "projectId": projectId,
+      "sql": parse_query.sql
+    }
+
+STEP semantic_query =
+  APX_EXEC "vdb.semanticQuery"
+    WITH {
+      "projectId": projectId,
+      "embedding": parse_query.embedding,
+      "limit": 10
+    }
+
+STEP merge_results =
+  APX_EXEC "query.merge"
+    WITH {
+      "sql": sql_query.rows,
+      "semantic": semantic_query.results,
+      "mode": mode
+    }
+
+STEP output =
+  OUTPUT merge_results.rows AS "results"
+
+END FLOW

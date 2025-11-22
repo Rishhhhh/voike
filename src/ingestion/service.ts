@@ -31,7 +31,7 @@ export type TransformPlanRequest = {
 };
 
 export class OmniIngestionService {
-  constructor(private pool: Pool) {}
+  constructor(private pool: Pool) { }
 
   async ensureTables() {
     await this.pool.query(`
@@ -59,6 +59,9 @@ export class OmniIngestionService {
         tags TEXT[],
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_ingest_lineage_project_time ON ingest_lineage(project_id, created_at DESC);
     `);
   }
 

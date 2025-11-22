@@ -1,0 +1,69 @@
+FLOW "Stream Ingestion - Real-time Data Processing"
+
+DESCRIPTION
+  "Ingest and process streaming data in real-time"
+END DESCRIPTION
+
+INPUTS
+  text streamId
+  text source
+  record config
+  text projectId
+END INPUTS
+
+# Step 1: Create stream
+STEP createStream =
+  APX_EXEC "stream.create"
+    WITH {
+      "streamId": streamId,
+      "source": source,
+      "projectId": projectId,
+      "config": config
+    }
+
+# Step 2: Start ingestion
+STEP ingest =
+  APX_EXEC "stream.start"
+    WITH {
+      "streamId": streamId,
+      "batchSize": config.batchSize,
+      "intervalMs": config.intervalMs
+    }
+
+# Step 3: Process batches
+STEP process =
+  APX_EXEC "stream.process"
+    WITH {
+      "streamId": streamId,
+      "processor": config.processor,
+      "transforms": config.transforms
+    }
+
+# Step 4: Store results
+STEP store =
+  APX_EXEC "vdb.insertRows"
+    WITH {
+      "projectId": projectId,
+      "rows": process.results,
+      "table": config.targetTable
+    }
+
+# Step 5: Monitor stream
+STEP monitor =
+  APX_EXEC "stream.monitor"
+    WITH {
+      "streamId": streamId,
+      "metrics": ["throughput", "latency", "errors"]
+    }
+
+# Step 6: Return status
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "streamId": streamId,
+    "status": "running",
+    "metrics": monitor.metrics,
+    "rowsProcessed": store.count
+  }
+
+END FLOW

@@ -1,6 +1,6 @@
 import { VasmOpcode, type Operand, type RegisterName, type VasmInstruction, type VasmProgram } from './program';
 
-type SyscallHandler = (vm: VasmVM, args: Operand[] | undefined) => void;
+export type SyscallHandler = (vm: VasmVM, args?: Operand[]) => void | Promise<void>;
 
 const DEFAULT_SYSCALLS: Partial<Record<VasmOpcode, SyscallHandler>> = {
   [VasmOpcode.PRINT]: (vm, args) => {
@@ -12,11 +12,77 @@ const DEFAULT_SYSCALLS: Partial<Record<VasmOpcode, SyscallHandler>> = {
     const reg = args?.[0] as RegisterName;
     vm.setRegister(reg, Date.now());
   },
-  [VasmOpcode.VOIKE_QUERY]: noopSyscall('VOIKE_QUERY'),
-  [VasmOpcode.VOIKE_BLOB]: noopSyscall('VOIKE_BLOB'),
-  [VasmOpcode.VOIKE_GRID_JOB]: noopSyscall('VOIKE_GRID_JOB'),
-  [VasmOpcode.VOIKE_AI_ASK]: noopSyscall('VOIKE_AI_ASK'),
-  [VasmOpcode.VOIKE_RUN_JOB]: noopSyscall('VOIKE_RUN_JOB'),
+  [VasmOpcode.VOIKE_QUERY]: async (vm, args) => {
+    // Real database query implementation
+    const queryReg = args?.[0] as RegisterName;
+    const resultReg = args?.[1] as RegisterName;
+    const query = vm.getRegister(queryReg);
+
+    // Execute query via context if available
+    if (vm['context']?.dbExecutor) {
+      const result = await vm['context'].dbExecutor(query);
+      vm.setRegister(resultReg, result);
+    } else {
+      vm.debugMessages.push('VOIKE_QUERY: No dbExecutor in context');
+      vm.setRegister(resultReg, 0);
+    }
+  },
+  [VasmOpcode.VOIKE_BLOB]: async (vm, args) => {
+    // Real blob storage implementation
+    const blobIdReg = args?.[0] as RegisterName;
+    const resultReg = args?.[1] as RegisterName;
+    const blobId = vm.getRegister(blobIdReg);
+
+    if (vm['context']?.blobExecutor) {
+      const result = await vm['context'].blobExecutor(blobId);
+      vm.setRegister(resultReg, result);
+    } else {
+      vm.debugMessages.push('VOIKE_BLOB: No blobExecutor in context');
+      vm.setRegister(resultReg, 0);
+    }
+  },
+  [VasmOpcode.VOIKE_GRID_JOB]: async (vm, args) => {
+    // Real grid job submission
+    const jobReg = args?.[0] as RegisterName;
+    const resultReg = args?.[1] as RegisterName;
+    const jobData = vm.getRegister(jobReg);
+
+    if (vm['context']?.gridExecutor) {
+      const jobId = await vm['context'].gridExecutor(jobData);
+      vm.setRegister(resultReg, jobId);
+    } else {
+      vm.debugMessages.push('VOIKE_GRID_JOB: No gridExecutor in context');
+      vm.setRegister(resultReg, 0);
+    }
+  },
+  [VasmOpcode.VOIKE_AI_ASK]: async (vm, args) => {
+    // Real AI call implementation
+    const promptReg = args?.[0] as RegisterName;
+    const resultReg = args?.[1] as RegisterName;
+    const prompt = vm.getRegister(promptReg);
+
+    if (vm['context']?.aiExecutor) {
+      const response = await vm['context'].aiExecutor(prompt);
+      vm.setRegister(resultReg, response);
+    } else {
+      vm.debugMessages.push('VOIKE_AI_ASK: No aiExecutor in context');
+      vm.setRegister(resultReg, 0);
+    }
+  },
+  [VasmOpcode.VOIKE_RUN_JOB]: async (vm, args) => {
+    // Real VVM job execution
+    const jobReg = args?.[0] as RegisterName;
+    const resultReg = args?.[1] as RegisterName;
+    const jobConfig = vm.getRegister(jobReg);
+
+    if (vm['context']?.vvmExecutor) {
+      const result = await vm['context'].vvmExecutor(jobConfig);
+      vm.setRegister(resultReg, result);
+    } else {
+      vm.debugMessages.push('VOIKE_RUN_JOB: No vvmExecutor in context');
+      vm.setRegister(resultReg, 0);
+    }
+  },
 };
 
 function noopSyscall(name: string): SyscallHandler {

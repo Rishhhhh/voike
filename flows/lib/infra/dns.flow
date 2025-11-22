@@ -1,0 +1,76 @@
+FLOW "VDNS - Virtual DNS Service"
+
+DESCRIPTION
+  "Manage virtual DNS zones and records for VOIKE services"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  text zone
+  record record
+  text projectId
+END INPUTS
+
+# Step 1: Validate zone
+STEP validateZone =
+  APX_EXEC "vdns.validateZone"
+    WITH {
+      "zone": zone,
+      "projectId": projectId
+    }
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH operation
+    CASE "create":
+      APX_EXEC "vdns.createRecord"
+        WITH {
+          "zone": zone,
+          "record": record,
+          "projectId": projectId
+        }
+    CASE "update":
+      APX_EXEC "vdns.updateRecord"
+        WITH {
+          "zone": zone,
+          "record": record,
+          "projectId": projectId
+        }
+    CASE "delete":
+      APX_EXEC "vdns.deleteRecord"
+        WITH {
+          "zone": zone,
+          "recordId": record.id,
+          "projectId": projectId
+        }
+    CASE "query":
+      APX_EXEC "vdns.queryRecords"
+        WITH {
+          "zone": zone,
+          "filter": record,
+          "projectId": projectId
+        }
+    DEFAULT:
+      ERROR "Unknown operation"
+  END SWITCH
+
+# Step 3: Sync to DNS providers
+STEP sync =
+  APX_EXEC "vdns.sync"
+    WITH {
+      "zone": zone,
+      "providers": ["cloudflare", "route53"],
+      "record": execute.result
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "zone": zone,
+    "record": execute.result,
+    "synced": sync.providers
+  }
+
+END FLOW

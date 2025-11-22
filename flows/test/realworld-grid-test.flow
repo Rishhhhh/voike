@@ -1,0 +1,40 @@
+FLOW "Real-World Test - Grid Job Submission"
+
+DESCRIPTION
+  "Test FLOW-native execution with a real grid job"
+END DESCRIPTION
+
+INPUTS
+  text projectId
+  text jobType
+  record params
+END INPUTS
+
+# Step 1: Submit grid job
+STEP submitJob =
+  APX_EXEC "grid.submitJob"
+    WITH {
+      "projectId": projectId,
+      "jobType": jobType,
+      "params": params
+    }
+
+# Step 2: Wait for completion
+STEP awaitJob =
+  APX_EXEC "grid.awaitJob"
+    WITH {
+      "jobId": submitJob.jobId,
+      "intervalMs": 1000,
+      "timeoutMs": 30000
+    }
+
+# Step 3: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "jobId": submitJob.jobId,
+    "status": awaitJob.status,
+    "result": awaitJob.result
+  }
+
+END FLOW

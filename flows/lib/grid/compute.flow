@@ -1,0 +1,86 @@
+FLOW "Grid Compute - Distributed Job Execution"
+
+DESCRIPTION
+  "Distributed grid computing for parallel job execution and resource allocation"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record jobConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "submit":
+      TRANSFORM { "valid": true, "action": "submit" }
+    CASE "await":
+      TRANSFORM { "valid": true, "action": "await" }
+    CASE "cancel":
+      TRANSFORM { "valid": true, "action": "cancel" }
+    CASE "status":
+      TRANSFORM { "valid": true, "action": "status" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "submit":
+      APX_EXEC "grid.submitJob"
+        WITH {
+          "projectId": projectId,
+          "type": jobConfig.type,
+          "params": jobConfig.params,
+          "inputRefs": jobConfig.inputRefs,
+          "priority": jobConfig.priority,
+          "resources": jobConfig.resources
+        }
+    CASE "await":
+      APX_EXEC "grid.awaitJob"
+        WITH {
+          "jobId": jobConfig.jobId,
+          "intervalMs": jobConfig.intervalMs,
+          "timeoutMs": jobConfig.timeoutMs
+        }
+    CASE "cancel":
+      APX_EXEC "grid.cancelJob"
+        WITH {
+          "jobId": jobConfig.jobId,
+          "reason": jobConfig.reason
+        }
+    CASE "status":
+      APX_EXEC "grid.getJobStatus"
+        WITH {
+          "jobId": jobConfig.jobId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Log operation
+STEP log =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "grid_operations",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "job_config": jobConfig,
+        "result": execute.result,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "logId": log.id
+  }
+
+END FLOW

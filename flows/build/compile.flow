@@ -1,0 +1,44 @@
+FLOW "Build VOIKE - Pure FLOW"
+
+INPUTS
+  text target
+END INPUTS
+
+STEP compile_flow =
+  APX_EXEC "build.runCommand"
+    WITH {
+      "command": "tsc -p flow/tsconfig.json",
+      "cwd": "."
+    }
+
+STEP compile_core =
+  APX_EXEC "build.runCommand"
+    WITH {
+      "command": "tsc -p tsconfig.build.json",
+      "cwd": "."
+    }
+
+STEP alias_paths =
+  APX_EXEC "build.runCommand"
+    WITH {
+      "command": "tsc-alias -p tsconfig.build.json",
+      "cwd": "."
+    }
+
+STEP bundle_vasm =
+  APX_EXEC "build.bundle"
+    WITH {
+      "entry": "vasm/src/index.ts",
+      "output": "dist/vasm.js"
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "✅ VOIKE Build Complete\\n" +
+    "Target: " + target + "\\n" +
+    "FLOW: " + compile_flow.status + "\\n" +
+    "Core: " + compile_core.status + "\\n" +
+    "VASM: " + bundle_vasm.status
+  )
+
+END FLOW

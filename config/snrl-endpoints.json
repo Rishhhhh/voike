@@ -5,11 +5,17 @@
     "ip": "103.1.212.10",
     "port": 443,
     "region": "ap-sg",
-    "weight": 1.0,
+    "weight": 0.2,
     "capacityScore": 0.9,
     "latencyBaselineMs": 20,
-    "capabilities": ["http", "gpu"],
-    "patterns": ["*.voike.com", "api.voike.com"]
+    "capabilities": [
+      "http",
+      "gpu"
+    ],
+    "patterns": [
+      "*.voike.com",
+      "api.voike.com"
+    ]
   },
   {
     "id": "edge-us1",
@@ -20,8 +26,13 @@
     "weight": 0.95,
     "capacityScore": 0.85,
     "latencyBaselineMs": 90,
-    "capabilities": ["http"],
-    "patterns": ["*.voike.com", "studio.voike.com"]
+    "capabilities": [
+      "http"
+    ],
+    "patterns": [
+      "*.voike.com",
+      "studio.voike.com"
+    ]
   },
   {
     "id": "edge-eu1",
@@ -32,7 +43,30 @@
     "weight": 0.92,
     "capacityScore": 0.8,
     "latencyBaselineMs": 110,
-    "capabilities": ["http", "llm"],
-    "patterns": ["*.voike.eu", "api.voike.com"]
+    "capabilities": [
+      "http",
+      "llm"
+    ],
+    "patterns": [
+      "*.voike.eu",
+      "api.voike.com"
+    ]
+  },
+  {
+    "id": "pop.dev.voike",
+    "host": "pop.dev.voike",
+    "ip": "127.0.0.1",
+    "port": 443,
+    "region": "dev-local",
+    "weight": 1,
+    "capacityScore": 1,
+    "latencyBaselineMs": 25,
+    "capabilities": [
+      "http",
+      "gpu"
+    ],
+    "patterns": [
+      "*.voike.supremeuf.com"
+    ]
   }
 ]

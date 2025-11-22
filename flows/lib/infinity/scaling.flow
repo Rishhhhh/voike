@@ -1,0 +1,92 @@
+FLOW "Infinity - Auto-Scaling and Resource Management"
+
+DESCRIPTION
+  "Automatic scaling, resource optimization, and capacity management"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record infinityConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "scale":
+      TRANSFORM { "valid": true, "action": "scale" }
+    CASE "optimize":
+      TRANSFORM { "valid": true, "action": "optimize" }
+    CASE "predict":
+      TRANSFORM { "valid": true, "action": "predict" }
+    CASE "monitor":
+      TRANSFORM { "valid": true, "action": "monitor" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Analyze current state
+STEP analyzeState =
+  APX_EXEC "infinity.analyzeState"
+    WITH {
+      "projectId": projectId,
+      "metrics": ["cpu", "memory", "throughput", "latency"]
+    }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "scale":
+      APX_EXEC "infinity.scale"
+        WITH {
+          "projectId": projectId,
+          "currentState": analyzeState.state,
+          "targetCapacity": infinityConfig.targetCapacity,
+          "strategy": infinityConfig.strategy
+        }
+    CASE "optimize":
+      APX_EXEC "infinity.optimize"
+        WITH {
+          "projectId": projectId,
+          "currentState": analyzeState.state,
+          "objective": infinityConfig.objective,
+          "constraints": infinityConfig.constraints
+        }
+    CASE "predict":
+      APX_EXEC "infinity.predict"
+        WITH {
+          "projectId": projectId,
+          "historicalData": analyzeState.history,
+          "horizon": infinityConfig.horizon
+        }
+    CASE "monitor":
+      APX_EXEC "infinity.monitor"
+        WITH {
+          "projectId": projectId,
+          "metrics": infinityConfig.metrics,
+          "interval": infinityConfig.interval
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Apply changes (if scale/optimize)
+STEP applyChanges =
+  IF operation == "scale" OR operation == "optimize"
+    THEN APX_EXEC "infinity.applyChanges"
+      WITH {
+        "projectId": projectId,
+        "changes": execute.changes
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "applied": applyChanges.success
+  }
+
+END FLOW

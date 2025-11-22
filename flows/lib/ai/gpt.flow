@@ -1,0 +1,96 @@
+FLOW "GPT Client - OpenAI GPT Integration"
+
+DESCRIPTION
+  "GPT API integration for prompt management and response handling"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record gptConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "complete":
+      TRANSFORM { "valid": true, "action": "complete" }
+    CASE "chat":
+      TRANSFORM { "valid": true, "action": "chat" }
+    CASE "embed":
+      TRANSFORM { "valid": true, "action": "embed" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Prepare request
+STEP prepareRequest =
+  TRANSFORM {
+    "model": gptConfig.model,
+    "apiKey": gptConfig.apiKey,
+    "baseUrl": gptConfig.baseUrl,
+    "temperature": gptConfig.temperature,
+    "maxTokens": gptConfig.maxTokens
+  }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "complete":
+      APX_EXEC "gpt.complete"
+        WITH {
+          "model": prepareRequest.output.model,
+          "prompt": gptConfig.prompt,
+          "maxTokens": prepareRequest.output.maxTokens,
+          "temperature": prepareRequest.output.temperature,
+          "apiKey": prepareRequest.output.apiKey,
+          "baseUrl": prepareRequest.output.baseUrl
+        }
+    CASE "chat":
+      APX_EXEC "gpt.chat"
+        WITH {
+          "model": prepareRequest.output.model,
+          "messages": gptConfig.messages,
+          "maxTokens": prepareRequest.output.maxTokens,
+          "temperature": prepareRequest.output.temperature,
+          "apiKey": prepareRequest.output.apiKey,
+          "baseUrl": prepareRequest.output.baseUrl
+        }
+    CASE "embed":
+      APX_EXEC "gpt.embed"
+        WITH {
+          "model": prepareRequest.output.model,
+          "input": gptConfig.input,
+          "apiKey": prepareRequest.output.apiKey,
+          "baseUrl": prepareRequest.output.baseUrl
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Track usage
+STEP trackUsage =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "gpt_usage",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "model": prepareRequest.output.model,
+        "tokens": execute.usage.totalTokens,
+        "cost": execute.usage.cost,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "model": prepareRequest.output.model,
+    "result": execute.result,
+    "usage": execute.usage
+  }
+
+END FLOW

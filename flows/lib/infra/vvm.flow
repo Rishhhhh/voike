@@ -1,0 +1,59 @@
+FLOW "VVM Deployment Pipeline"
+
+INPUTS
+  text projectId
+  text vpkgId
+  text serviceName
+  text env
+END INPUTS
+
+STEP validate_vpkg =
+  APX_EXEC "vpkg.validate"
+    WITH {
+      "projectId": projectId,
+      "vpkgId": vpkgId
+    }
+
+STEP get_descriptor =
+  APX_EXEC "vvm.getDescriptor"
+    WITH {
+      "projectId": projectId,
+      "name": serviceName
+    }
+
+STEP build_image =
+  APX_EXEC "vvm.buildImage"
+    WITH {
+      "projectId": projectId,
+      "vpkgId": vpkgId,
+      "descriptor": get_descriptor.descriptor,
+      "env": env
+    }
+
+STEP deploy =
+  DEPLOY_SERVICE vpkgId serviceName
+
+STEP health_check =
+  APX_EXEC "vvm.healthCheck"
+    WITH {
+      "projectId": projectId,
+      "endpoint": deploy.endpoint,
+      "timeout": 30000
+    }
+
+STEP record_deployment =
+  APX_EXEC "vvm.recordDeployment"
+    WITH {
+      "projectId": projectId,
+      "vpkgId": vpkgId,
+      "serviceName": serviceName,
+      "endpoint": deploy.endpoint,
+      "status": health_check.status
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "🚀 Deployed " + serviceName + " at " + deploy.endpoint + " (health: " + health_check.status + ")"
+  )
+
+END FLOW

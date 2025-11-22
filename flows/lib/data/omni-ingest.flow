@@ -1,0 +1,104 @@
+FLOW "Omni Ingestion - Universal Data Ingestion"
+
+DESCRIPTION
+  "Universal data ingestion supporting multiple formats and sources"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record omniConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "ingest":
+      TRANSFORM { "valid": true, "action": "ingest" }
+    CASE "stream":
+      TRANSFORM { "valid": true, "action": "stream" }
+    CASE "batch":
+      TRANSFORM { "valid": true, "action": "batch" }
+    CASE "transform":
+      TRANSFORM { "valid": true, "action": "transform" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Detect format
+STEP detectFormat =
+  APX_EXEC "omni.detectFormat"
+    WITH {
+      "source": omniConfig.source,
+      "sample": omniConfig.sample
+    }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "ingest":
+      APX_EXEC "omni.ingest"
+        WITH {
+          "projectId": projectId,
+          "source": omniConfig.source,
+          "format": detectFormat.format,
+          "destination": omniConfig.destination,
+          "options": omniConfig.options
+        }
+    CASE "stream":
+      APX_EXEC "omni.stream"
+        WITH {
+          "projectId": projectId,
+          "source": omniConfig.source,
+          "format": detectFormat.format,
+          "processor": omniConfig.processor,
+          "batchSize": omniConfig.batchSize
+        }
+    CASE "batch":
+      APX_EXEC "omni.batch"
+        WITH {
+          "projectId": projectId,
+          "sources": omniConfig.sources,
+          "format": detectFormat.format,
+          "destination": omniConfig.destination,
+          "parallelism": omniConfig.parallelism
+        }
+    CASE "transform":
+      APX_EXEC "omni.transform"
+        WITH {
+          "projectId": projectId,
+          "data": omniConfig.data,
+          "sourceFormat": detectFormat.format,
+          "targetFormat": omniConfig.targetFormat,
+          "transformations": omniConfig.transformations
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Index ingested data
+STEP indexData =
+  IF operation == "ingest" OR operation == "batch"
+    THEN CALL_FLOW "flows/lib/index/retrieval.flow"
+      WITH {
+        "operation": "index",
+        "indexConfig": {
+          "documentId": execute.jobId,
+          "content": execute.summary,
+          "metadata": execute.metadata
+        },
+        "projectId": projectId
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "format": detectFormat.format,
+    "result": execute.result,
+    "indexed": indexData.success
+  }
+
+END FLOW

@@ -1,0 +1,89 @@
+FLOW "Blob Storage - File Management"
+
+DESCRIPTION
+  "Blob storage operations for file management and content addressing"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record blobConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "upload":
+      TRANSFORM { "valid": true, "action": "upload" }
+    CASE "download":
+      TRANSFORM { "valid": true, "action": "download" }
+    CASE "delete":
+      TRANSFORM { "valid": true, "action": "delete" }
+    CASE "list":
+      TRANSFORM { "valid": true, "action": "list" }
+    CASE "metadata":
+      TRANSFORM { "valid": true, "action": "metadata" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "upload":
+      APX_EXEC "blob.upload"
+        WITH {
+          "projectId": projectId,
+          "content": blobConfig.content,
+          "filename": blobConfig.filename,
+          "contentType": blobConfig.contentType,
+          "metadata": blobConfig.metadata
+        }
+    CASE "download":
+      APX_EXEC "blob.download"
+        WITH {
+          "blobId": blobConfig.blobId,
+          "projectId": projectId
+        }
+    CASE "delete":
+      APX_EXEC "blob.delete"
+        WITH {
+          "blobId": blobConfig.blobId,
+          "projectId": projectId
+        }
+    CASE "list":
+      APX_EXEC "blob.list"
+        WITH {
+          "projectId": projectId,
+          "prefix": blobConfig.prefix,
+          "limit": blobConfig.limit
+        }
+    CASE "metadata":
+      APX_EXEC "blob.getMetadata"
+        WITH {
+          "blobId": blobConfig.blobId,
+          "projectId": projectId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Update index
+STEP index =
+  APX_EXEC "irx.updateIndex"
+    WITH {
+      "operation": operation,
+      "blobId": execute.result.blobId,
+      "metadata": execute.result.metadata
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "indexed": index.success
+  }
+
+END FLOW

@@ -1,0 +1,42 @@
+FLOW "Benchmark - Parallel Execution Test"
+
+INPUTS
+  text projectId
+END INPUTS
+
+STEP task1 =
+  APX_EXEC "agent.fastAnswer"
+    WITH {
+      "projectId": projectId,
+      "question": "What is the capital of France?"
+    }
+
+STEP task2 =
+  APX_EXEC "agent.fastAnswer"
+    WITH {
+      "projectId": projectId,
+      "question": "What is 2+2?"
+    }
+
+STEP task3 =
+  APX_EXEC "agent.fastAnswer"
+    WITH {
+      "projectId": projectId,
+      "question": "Explain quantum computing in one sentence"
+    }
+
+STEP vasm_test =
+  RUN VASM "fibonacci"
+    WITH {
+      "n": 10
+    }
+
+STEP combine =
+  OUTPUT_TEXT (
+    "Task 1: " + task1.answer + "\n" +
+    "Task 2: " + task2.answer + "\n" +
+    "Task 3: " + task3.answer + "\n" +
+    "VASM: " + vasm_test.status
+  )
+
+END FLOW

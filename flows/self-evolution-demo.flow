@@ -1,0 +1,78 @@
+FLOW "Self-Evolution Demo - Agent Improves Itself"
+
+DESCRIPTION
+  "Demonstration of agent self-evolution: an agent analyzes and improves a FLOW file"
+END DESCRIPTION
+
+INPUTS
+  text targetFlow
+  text improvementGoal
+END INPUTS
+
+# Step 1: Read current FLOW
+STEP readFlow =
+  APX_EXEC "fs.readFile"
+    WITH {
+      "path": targetFlow
+    }
+
+# Step 2: Analyze FLOW for improvements
+STEP analyze =
+  APX_EXEC "ai.ask"
+    WITH {
+      "prompt": CONCAT(
+        "You are a FLOW optimization expert. Analyze this FLOW file and suggest improvements.\n\n",
+        "Goal: ", improvementGoal, "\n\n",
+        "Current FLOW:\n",
+        readFlow.content,
+        "\n\nProvide specific, actionable improvements."
+      ),
+      "model": "gpt-4"
+    }
+
+# Step 3: Generate improved FLOW
+STEP improve =
+  CALL_FLOW "flows/lib/meta/evolution.flow"
+    WITH {
+      "operation": "optimize",
+      "targetFlow": targetFlow,
+      "context": {
+        "goal": improvementGoal,
+        "analysis": analyze.response
+      },
+      "projectId": "demo",
+      "runId": "self-evolution-demo"
+    }
+
+# Step 4: Test improved FLOW
+STEP test =
+  CALL_FLOW targetFlow
+    WITH {
+      "test": true
+    }
+
+# Step 5: Compare results
+STEP compare =
+  TRANSFORM {
+    "original": readFlow.content,
+    "improved": improve.new_content,
+    "analysis": analyze.response,
+    "testResult": test.outputs,
+    "success": improve.success
+  }
+
+# Step 6: Output results
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "evolved": improve.evolved,
+    "targetFlow": targetFlow,
+    "goal": improvementGoal,
+    "analysis": analyze.response,
+    "improvements": improve.analysis,
+    "testPassed": test.outputs.success,
+    "comparison": compare.output,
+    "message": "Agent successfully evolved the FLOW file!"
+  }
+
+END FLOW

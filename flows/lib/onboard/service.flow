@@ -1,0 +1,75 @@
+FLOW "Onboarding - Project Setup and Migration"
+
+DESCRIPTION
+  "Onboard new projects, setup automation, and migration tools"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record onboardConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "init":
+      TRANSFORM { "valid": true, "action": "init" }
+    CASE "migrate":
+      TRANSFORM { "valid": true, "action": "migrate" }
+    CASE "analyze":
+      TRANSFORM { "valid": true, "action": "analyze" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "init":
+      APX_EXEC "onboard.initialize"
+        WITH {
+          "projectId": projectId,
+          "template": onboardConfig.template,
+          "name": onboardConfig.name,
+          "config": onboardConfig.config
+        }
+    CASE "migrate":
+      APX_EXEC "onboard.migrate"
+        WITH {
+          "projectId": projectId,
+          "source": onboardConfig.source,
+          "target": "voike",
+          "options": onboardConfig.options
+        }
+    CASE "analyze":
+      APX_EXEC "onboard.analyze"
+        WITH {
+          "projectId": projectId,
+          "codebase": onboardConfig.codebase
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Setup infrastructure (if init)
+STEP setupInfra =
+  IF operation == "init"
+    THEN CALL_FLOW "flows/lib/infra/vvm.flow"
+      WITH {
+        "operation": "deploy",
+        "config": onboardConfig.infraConfig,
+        "projectId": projectId
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "infrastructure": setupInfra.result
+  }
+
+END FLOW

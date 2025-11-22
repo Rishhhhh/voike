@@ -2,18 +2,52 @@
   {
     "id": "voike-com",
     "zone": "voike.com",
-    "serial": 2025111801,
+    "serial": 2025111816,
     "ttl": 300,
     "primaryNs": "ns1.voike.net.",
     "admin": "noc.voike.com.",
     "records": [
-      { "type": "NS", "name": "voike.com.", "value": "ns1.voike.net." },
-      { "type": "NS", "name": "voike.com.", "value": "ns2.voike.net." },
-      { "type": "A", "name": "ns1.voike.net.", "value": "103.1.212.10" },
-      { "type": "A", "name": "ns2.voike.net.", "value": "198.51.100.20" },
-      { "type": "A", "name": "api.voike.com.", "value": "203.0.113.77" },
-      { "type": "AAAA", "name": "api.voike.com.", "value": "2001:db8:1::77" },
-      { "type": "TXT", "name": "voike.com.", "value": "voike-ver=phase2" }
+      {
+        "type": "NS",
+        "name": "voike.com.",
+        "value": "ns1.voike.net."
+      },
+      {
+        "type": "NS",
+        "name": "voike.com.",
+        "value": "ns2.voike.net."
+      },
+      {
+        "type": "A",
+        "name": "ns1.voike.net.",
+        "value": "103.1.212.10"
+      },
+      {
+        "type": "A",
+        "name": "ns2.voike.net.",
+        "value": "198.51.100.20"
+      },
+      {
+        "type": "A",
+        "name": "api.voike.com.",
+        "value": "203.0.113.77"
+      },
+      {
+        "type": "AAAA",
+        "name": "api.voike.com.",
+        "value": "2001:db8:1::77"
+      },
+      {
+        "type": "TXT",
+        "name": "voike.com.",
+        "value": "voike-ver=phase2"
+      },
+      {
+        "type": "A",
+        "name": "pop.dev.voike.",
+        "value": "127.0.0.1",
+        "ttl": 60
+      }
     ]
   }
 ]

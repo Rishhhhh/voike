@@ -1,0 +1,60 @@
+FLOW "VOIKE Init - Create New Project"
+
+INPUTS
+  text projectName
+  text template
+END INPUTS
+
+STEP create_directory =
+  APX_EXEC "fs.mkdir"
+    WITH {
+      "path": projectName,
+      "recursive": true
+    }
+
+STEP create_config =
+  APX_EXEC "fs.writeFile"
+    WITH {
+      "path": projectName + "/voike.config.json",
+      "content": {
+        "name": projectName,
+        "version": "1.0.0",
+        "template": template
+      }
+    }
+
+STEP create_flows_dir =
+  APX_EXEC "fs.mkdir"
+    WITH {
+      "path": projectName + "/flows",
+      "recursive": true
+    }
+
+STEP copy_template =
+  APX_EXEC "template.copy"
+    WITH {
+      "template": template,
+      "destination": projectName
+    }
+
+STEP init_database =
+  APX_EXEC "infra.ensureDatabase"
+    WITH {
+      "projectId": create_config.projectId,
+      "targetEnv": "development"
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "🌊 VOIKE Project Created!\\n" +
+    "\\n" +
+    "Project: " + projectName + "\\n" +
+    "Template: " + template + "\\n" +
+    "\\n" +
+    "Next steps:\\n" +
+    "  cd " + projectName + "\\n" +
+    "  voike build\\n" +
+    "  voike dev"
+  )
+
+END FLOW

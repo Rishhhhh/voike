@@ -1,0 +1,89 @@
+FLOW "Mesh P2P - Peer-to-Peer Networking"
+
+DESCRIPTION
+  "P2P networking for node discovery, message routing, and decentralized communication"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record meshConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "connect":
+      TRANSFORM { "valid": true, "action": "connect" }
+    CASE "discover":
+      TRANSFORM { "valid": true, "action": "discover" }
+    CASE "broadcast":
+      TRANSFORM { "valid": true, "action": "broadcast" }
+    CASE "route":
+      TRANSFORM { "valid": true, "action": "route" }
+    CASE "status":
+      TRANSFORM { "valid": true, "action": "status" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "connect":
+      APX_EXEC "mesh.connect"
+        WITH {
+          "nodeId": meshConfig.nodeId,
+          "address": meshConfig.address,
+          "protocol": meshConfig.protocol
+        }
+    CASE "discover":
+      APX_EXEC "mesh.discover"
+        WITH {
+          "region": meshConfig.region,
+          "capabilities": meshConfig.capabilities,
+          "maxNodes": meshConfig.maxNodes
+        }
+    CASE "broadcast":
+      APX_EXEC "mesh.broadcast"
+        WITH {
+          "message": meshConfig.message,
+          "topic": meshConfig.topic,
+          "ttl": meshConfig.ttl
+        }
+    CASE "route":
+      APX_EXEC "mesh.route"
+        WITH {
+          "targetNodeId": meshConfig.targetNodeId,
+          "message": meshConfig.message,
+          "priority": meshConfig.priority
+        }
+    CASE "status":
+      APX_EXEC "mesh.getStatus"
+        WITH {
+          "includeMetrics": meshConfig.includeMetrics
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Update topology (if connect/discover)
+STEP updateTopology =
+  IF operation == "connect" OR operation == "discover"
+    THEN APX_EXEC "mesh.updateTopology"
+      WITH {
+        "nodes": execute.nodes,
+        "connections": execute.connections
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "topology": updateTopology.topology
+  }
+
+END FLOW

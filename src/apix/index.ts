@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import crypto from 'crypto';
+import { MetaOpsService } from '@ops/meta';
 
 export type ApixSession = {
   sessionId: string;
@@ -38,8 +39,9 @@ export class ApixService {
       execVvm: (projectId: string, payload: any) => Promise<any>;
       flow: FlowApiHandlers;
       agents?: Record<string, (projectId: string, payload: any) => Promise<any>>;
+      metaOps: MetaOpsService;
     },
-  ) {}
+  ) { }
 
   async ensureTables() {
     await this.pool.query(`
@@ -62,6 +64,9 @@ export class ApixService {
         status TEXT NOT NULL DEFAULT 'open',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_apix_flows_session_time ON apix_flows(session_id, created_at DESC);
     `);
   }
 
@@ -245,7 +250,23 @@ export class ApixService {
         { name: 'vpkgs.createFromProject', input: { type: 'VpkgCreateRequest' }, output: { type: 'VpkgCreateResponse' } },
         { name: 'project.build', input: { type: 'ProjectBuildRequest' }, output: { type: 'ProjectBuildResponse' } },
         { name: 'apps.launch', input: { type: 'AppLaunchRequest' }, output: { type: 'AppLaunchResponse' } },
+        { name: 'apps.launch', input: { type: 'AppLaunchRequest' }, output: { type: 'AppLaunchResponse' } },
         { name: 'agent.onboardExplainer', input: { type: 'OnboardExplainRequest' }, output: { type: 'OnboardExplainResponse' } },
+        // Meta Ops
+        { name: 'infra.ensureDatabase', input: { type: 'InfraRequest' }, output: { type: 'InfraResponse' } },
+        { name: 'kernel.ensureKernel8', input: { type: 'KernelRequest' }, output: { type: 'KernelResponse' } },
+        { name: 'kernel.ensureKernel9', input: { type: 'KernelRequest' }, output: { type: 'KernelResponse' } },
+        { name: 'vm.ensureVasmRuntime', input: { type: 'VmRequest' }, output: { type: 'VmResponse' } },
+        { name: 'vvm.registerEnvs', input: { type: 'VvmEnvRequest' }, output: { type: 'VvmEnvResponse' } },
+        { name: 'vvm.registerDescriptors', input: { type: 'VvmDescRequest' }, output: { type: 'VvmDescResponse' } },
+        { name: 'flow.enableCompiler', input: { type: 'CompilerRequest' }, output: { type: 'CompilerResponse' } },
+        { name: 'source.cloneRepo', input: { type: 'RepoRequest' }, output: { type: 'RepoResponse' } },
+        { name: 'gateway.configure', input: { type: 'GatewayRequest' }, output: { type: 'GatewayResponse' } },
+        { name: 'playground.seed', input: { type: 'PlaygroundRequest' }, output: { type: 'PlaygroundResponse' } },
+        { name: 'orchestrator.registerAgents', input: { type: 'AgentRegRequest' }, output: { type: 'AgentRegResponse' } },
+        { name: 'tests.runSuite', input: { type: 'TestRequest' }, output: { type: 'TestResponse' } },
+        { name: 'capsules.create', input: { type: 'CapsuleRequest' }, output: { type: 'CapsuleResponse' } },
+        { name: 'orchestrator.registerFlow', input: { type: 'FlowRegRequest' }, output: { type: 'FlowRegResponse' } },
       ],
       intents: [
         {
@@ -310,6 +331,35 @@ export class ApixService {
         return this.runAgentOp('apps.launch', projectId, payload);
       case 'agent.onboardExplainer':
         return this.runAgentOp('agent.onboardExplainer', projectId, payload);
+      // Meta Ops
+      case 'infra.ensureDatabase':
+        return this.opts.metaOps.ensureDatabase(projectId, payload);
+      case 'kernel.ensureKernel8':
+        return this.opts.metaOps.ensureKernel8(projectId, payload);
+      case 'kernel.ensureKernel9':
+        return this.opts.metaOps.ensureKernel9(projectId, payload);
+      case 'vm.ensureVasmRuntime':
+        return this.opts.metaOps.ensureVasmRuntime(projectId, payload);
+      case 'vvm.registerEnvs':
+        return this.opts.metaOps.registerEnvs(projectId, payload);
+      case 'vvm.registerDescriptors':
+        return this.opts.metaOps.registerDescriptors(projectId, payload);
+      case 'flow.enableCompiler':
+        return this.opts.metaOps.enableCompiler(projectId, payload);
+      case 'source.cloneRepo':
+        return this.opts.metaOps.cloneRepo(projectId, payload);
+      case 'gateway.configure':
+        return this.opts.metaOps.configureGateway(projectId, payload);
+      case 'playground.seed':
+        return this.opts.metaOps.seedPlayground(projectId, payload);
+      case 'orchestrator.registerAgents':
+        return this.opts.metaOps.registerAgents(projectId, payload);
+      case 'tests.runSuite':
+        return this.opts.metaOps.runSuite(projectId, payload);
+      case 'capsules.create':
+        return this.opts.metaOps.createCapsule(projectId, payload);
+      case 'orchestrator.registerFlow':
+        return this.opts.metaOps.registerFlow(projectId, payload);
       default:
         throw new Error(`Unsupported APIX op ${op}`);
     }

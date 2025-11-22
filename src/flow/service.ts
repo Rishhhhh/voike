@@ -25,15 +25,16 @@ export type FlowTextCollector = (text: string, context: { projectId: string; run
 export type FlowServiceHandlers =
   | FlowAgentHandler
   | {
-      agentHandler?: FlowAgentHandler;
-      apxExecutor?: FlowApxExecutor;
-      vpkgBuilder?: FlowVpkgBuilder;
-      serviceDeployer?: FlowServiceDeployer;
-      textCollector?: FlowTextCollector;
-    };
+    agentHandler?: FlowAgentHandler;
+    apxExecutor?: FlowApxExecutor;
+    vpkgBuilder?: FlowVpkgBuilder;
+    serviceDeployer?: FlowServiceDeployer;
+    textCollector?: FlowTextCollector;
+  };
 
 export class FlowService {
   private plans = new Map<string, StoredFlowPlan>();
+  private planCache = new Map<string, StoredFlowPlan>();
   private agentHandler?: FlowAgentHandler;
   private handlers: Exclude<FlowServiceHandlers, FlowAgentHandler> | undefined;
 
@@ -54,6 +55,13 @@ export class FlowService {
   }
 
   plan(projectId: string, source: string): StoredFlowPlan {
+    // Cache key: hash of source for fast lookup
+    const cacheKey = `${projectId}:${hashString(source)}`;
+    const cached = this.planCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const parseResult = this.parse(source, { strict: true });
     if (!parseResult.ok || !parseResult.ast) {
       const error = parseResult.errors?.join(', ') || 'Failed to parse FLOW source';
@@ -62,6 +70,7 @@ export class FlowService {
     const plan = buildFlowPlan(parseResult.ast);
     const stored: StoredFlowPlan = { ...plan, projectId };
     this.plans.set(plan.id, stored);
+    this.planCache.set(cacheKey, stored);
     return stored;
   }
 
@@ -148,3 +157,13 @@ const FLOW_OPS = [
 ];
 
 const FLOW_OP_LOOKUP = new Map(FLOW_OPS.map((op) => [op.name, op]));
+
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return hash.toString(36);
+}

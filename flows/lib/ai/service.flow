@@ -1,0 +1,98 @@
+FLOW "AI Service - Model Management and Inference"
+
+DESCRIPTION
+  "Manage AI models, inference operations, and model routing"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record aiConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "infer":
+      TRANSFORM { "valid": true, "action": "infer" }
+    CASE "embed":
+      TRANSFORM { "valid": true, "action": "embed" }
+    CASE "complete":
+      TRANSFORM { "valid": true, "action": "complete" }
+    CASE "chat":
+      TRANSFORM { "valid": true, "action": "chat" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Select model
+STEP selectModel =
+  APX_EXEC "ai.selectModel"
+    WITH {
+      "operation": operation,
+      "requirements": aiConfig.requirements,
+      "preferLocal": aiConfig.preferLocal
+    }
+
+# Step 3: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "infer":
+      APX_EXEC "ai.infer"
+        WITH {
+          "model": selectModel.model,
+          "input": aiConfig.input,
+          "parameters": aiConfig.parameters
+        }
+    CASE "embed":
+      APX_EXEC "ai.embed"
+        WITH {
+          "model": selectModel.model,
+          "text": aiConfig.text,
+          "dimensions": aiConfig.dimensions
+        }
+    CASE "complete":
+      APX_EXEC "ai.complete"
+        WITH {
+          "model": selectModel.model,
+          "prompt": aiConfig.prompt,
+          "maxTokens": aiConfig.maxTokens,
+          "temperature": aiConfig.temperature
+        }
+    CASE "chat":
+      APX_EXEC "ai.chat"
+        WITH {
+          "model": selectModel.model,
+          "messages": aiConfig.messages,
+          "maxTokens": aiConfig.maxTokens
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 4: Log usage
+STEP logUsage =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "ai_usage",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "model": selectModel.model,
+        "tokens": execute.usage.tokens,
+        "cost": execute.usage.cost,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 5: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "model": selectModel.model,
+    "result": execute.result,
+    "usage": execute.usage
+  }
+
+END FLOW

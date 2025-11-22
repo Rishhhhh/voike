@@ -25,6 +25,7 @@ import { HypermeshService } from '@hypermesh/index';
 import { TrustService } from '@trust/index';
 import { HybridQueryService } from '@hybrid/queryService';
 import { ChaosEngine, OpsService } from '@ops/index';
+import { MetaOpsService } from '@ops/meta';
 import { VvmService } from '@vvm/index';
 import { ApixService } from '@apix/index';
 import { InfinityService } from '@infinity/index';
@@ -45,6 +46,7 @@ import { SnrlController } from './snrl/controller';
 import { VdnsService } from './vdns/service';
 import { syncFromGenesis, registerWithGenesis } from './genesis';
 import { EvolutionAgentService } from '@orchestrator/evolution';
+import { createFlowNativeExecutor } from './flow/flowNativeExecutor';
 
 const repoRoot = path.resolve(process.cwd());
 
@@ -131,16 +133,20 @@ const bootstrap = async () => {
   const agentRuntime = new AgentRuntimeService({ registry: agentRegistry, logger });
   const gptClient = config.ai.openai
     ? new GptClient({
-        apiKey: config.ai.openai.apiKey,
-        baseUrl: config.ai.openai.baseUrl,
-        model: config.ai.openai.model,
-      })
+      apiKey: config.ai.openai.apiKey,
+      baseUrl: config.ai.openai.baseUrl,
+      model: config.ai.openai.model,
+    })
     : undefined;
   const agentOps = new AgentOpsService(orchestrator, { llm: gptClient });
   const onboard = new OnboardService(orchestrator);
   const evolveAgents = new EvolutionAgentService(orchestrator, { repoRoot, llm: gptClient });
   const snrl = new SnrlService();
   const vdns = new VdnsService();
+
+  // Create FLOW-native executor (will be assigned after FlowService is created)
+  let flowNativeExecutor: any;
+
   const flow = new FlowService({
     agentHandler: async (agent, payload, ctx) => {
       if (evolveAgents.supports(agent, payload)) {
@@ -175,6 +181,20 @@ const bootstrap = async () => {
       if (!ctx.projectId) {
         throw new Error('FLOW APX execution requires projectId');
       }
+
+      // Try FLOW-native executor first
+      try {
+        if (flowNativeExecutor) {
+          logger.info(`[FLOW-Native] Executing ${target} via FLOW`);
+          return await flowNativeExecutor(target, payload, ctx);
+        }
+      } catch (error: any) {
+        // If FLOW execution fails, log and fall back to legacy
+        logger.warn(`[FLOW-Native] Failed to execute ${target} via FLOW, falling back to legacy: ${error.message}`);
+      }
+
+      // Legacy TypeScript service fallback
+      logger.info(`[Legacy] Executing ${target} via TypeScript service`);
       switch (target) {
         case 'grid.submitJob': {
           const jobId = await grid.submitJob({
@@ -243,6 +263,37 @@ const bootstrap = async () => {
           }
           throw new Error('source.readFile requires path or fallback content');
         }
+        // Meta Ops
+        case 'infra.ensureDatabase':
+          return metaOps.ensureDatabase(ctx.projectId, payload);
+        case 'kernel.ensureKernel8':
+          return metaOps.ensureKernel8(ctx.projectId, payload);
+        case 'kernel.ensureKernel9':
+          return metaOps.ensureKernel9(ctx.projectId, payload);
+        case 'vm.ensureVasmRuntime':
+          return metaOps.ensureVasmRuntime(ctx.projectId, payload);
+        case 'vvm.registerEnvs':
+          return metaOps.registerEnvs(ctx.projectId, payload);
+        case 'vvm.registerDescriptors':
+          return metaOps.registerDescriptors(ctx.projectId, payload);
+        case 'flow.enableCompiler':
+          return metaOps.enableCompiler(ctx.projectId, payload);
+        case 'source.cloneRepo':
+          return metaOps.cloneRepo(ctx.projectId, payload);
+        case 'gateway.configure':
+          return metaOps.configureGateway(ctx.projectId, payload);
+        case 'playground.seed':
+          return metaOps.seedPlayground(ctx.projectId, payload);
+        case 'orchestrator.registerAgents':
+          return metaOps.registerAgents(ctx.projectId, payload);
+        case 'tests.runSuite':
+          return metaOps.runSuite(ctx.projectId, payload);
+        case 'capsules.create':
+          return metaOps.createCapsule(ctx.projectId, payload);
+        case 'orchestrator.registerFlow':
+          return metaOps.registerFlow(ctx.projectId, payload);
+        case 'vpkgs.createFromProject':
+          return onboard.handle('vpkgs.createFromProject', payload, { projectId: ctx.projectId, runId: ctx.runId || crypto.randomUUID() });
         default:
           throw new Error(`Unknown APX_EXEC target ${target}`);
       }
@@ -309,6 +360,11 @@ const bootstrap = async () => {
       return { jobId };
     },
   });
+
+  // Initialize FLOW-native executor
+  flowNativeExecutor = createFlowNativeExecutor(flow, repoRoot);
+  logger.info('[FLOW-Native] Executor initialized - routing 150+ operations to FLOW files');
+
   const snrlController = new SnrlController(flow, snrl);
   const vpkg = new VpkgService();
   const captureKnowledge = async (node: {
@@ -378,6 +434,7 @@ const bootstrap = async () => {
       metadata: event.payload.meta || {},
     });
   });
+  const metaOps = new MetaOpsService(pool, vvm, envService, orchestrator, capsules);
   const apix = new ApixService(pool, {
     execQuery: (projectId, payload) => vdb.execute(payload.query),
     ingestBatch: (projectId, payload) =>
@@ -415,6 +472,7 @@ const bootstrap = async () => {
       'apps.launch': (projectId, payload) => onboard.handle('apps.launch', payload, { projectId, runId: crypto.randomUUID() }),
       'agent.onboardExplainer': (projectId, payload) => onboard.handle('agent.onboardExplainer', payload, { projectId, runId: crypto.randomUUID() }),
     },
+    metaOps,
   });
   await apix.ensureTables();
   const tools = await createDefaultToolRegistry(pool, vdb, uie, kernel9, dai, blobgrid, vvm);

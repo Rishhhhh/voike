@@ -1,11 +1,24 @@
-node_modules
-dist
+# Build artifacts
+dist/
+*.egg-info/
+__pycache__/
 .jest-localstorage
-.env
-scripts/.env
-coverage
-tmp
+
+# Test/debug files
 *.log
-.DS_Store
+*_output*.json
+*_req*.json
+*_plan*.json
+*.txt
+
+# Environment
 .env.local
-.env
+.venv/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

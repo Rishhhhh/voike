@@ -1,0 +1,50 @@
+FLOW "FLOW Library Test - Everything in FLOW"
+
+INPUTS
+  text projectId
+END INPUTS
+
+STEP test_agents =
+  CALL FLOW "flows/lib/ai/agents.flow"
+    WITH {
+      "projectId": projectId,
+      "question": "What is VOIKE?",
+      "maxSegments": 4
+    }
+
+STEP test_ingest =
+  CALL FLOW "flows/lib/data/ingest.flow"
+    WITH {
+      "projectId": projectId,
+      "sourceId": "test-source-001",
+      "format": "csv",
+      "data": "name,age,city\nAlice,30,NYC\nBob,25,SF"
+    }
+
+STEP test_query =
+  CALL FLOW "flows/lib/data/query.flow"
+    WITH {
+      "projectId": projectId,
+      "query": "SELECT * FROM users WHERE age > 25",
+      "mode": "hybrid"
+    }
+
+STEP test_vasm =
+  RUN VASM "fibonacci"
+    WITH {
+      "n": 15
+    }
+
+STEP combine_results =
+  OUTPUT_TEXT (
+    "🌊 FLOW LIBRARY TEST RESULTS\\n" +
+    "================================\\n" +
+    "✅ Agents: " + test_agents.final_answer + "\\n" +
+    "✅ Ingestion: " + test_ingest.output + "\\n" +
+    "✅ Query: " + test_query.results + " rows\\n" +
+    "✅ VASM: " + test_vasm.status + "\\n" +
+    "================================\\n" +
+    "ALL SYSTEMS FLOW! 🚀"
+  )
+
+END FLOW

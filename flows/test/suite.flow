@@ -1,0 +1,62 @@
+FLOW "VOIKE Test Suite - All Tests"
+
+INPUTS
+  text mode
+END INPUTS
+
+STEP unit_tests =
+  APX_EXEC "test.runJest"
+    WITH {
+      "config": "jest.config.js",
+      "coverage": true
+    }
+
+STEP flow_library_tests =
+  CALL FLOW "flows/flow-library-test.flow"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001"
+    }
+
+STEP regression_tests =
+  CALL FLOW "flows/voike-regression.flow"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001"
+    }
+
+STEP performance_tests =
+  CALL FLOW "flows/benchmark.flow"
+    WITH {
+      "projectId": "00000000-0000-0000-0000-000000000001"
+    }
+
+STEP integration_tests =
+  APX_EXEC "test.runIntegration"
+    WITH {
+      "suites": ["api", "agents", "vvm", "flow"]
+    }
+
+STEP calculate_coverage =
+  APX_EXEC "test.calculateCoverage"
+    WITH {
+      "results": [
+        unit_tests.coverage,
+        flow_library_tests.coverage,
+        integration_tests.coverage
+      ]
+    }
+
+STEP output =
+  OUTPUT_TEXT (
+    "🧪 VOIKE Test Results\\n" +
+    "===================\\n" +
+    "Unit Tests: " + unit_tests.passed + "/" + unit_tests.total + " ✅\\n" +
+    "FLOW Tests: " + flow_library_tests.status + " ✅\\n" +
+    "Regression: " + regression_tests.status + " ✅\\n" +
+    "Performance: " + performance_tests.metrics.elapsedMs + "ms ⚡\\n" +
+    "Integration: " + integration_tests.passed + "/" + integration_tests.total + " ✅\\n" +
+    "Coverage: " + calculate_coverage.percentage + "%\\n" +
+    "===================\\n" +
+    "Status: ALL TESTS PASS 🎉"
+  )
+
+END FLOW

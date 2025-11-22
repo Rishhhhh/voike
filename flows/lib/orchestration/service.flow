@@ -1,0 +1,95 @@
+FLOW "Orchestrator - Task and Workflow Management"
+
+DESCRIPTION
+  "Orchestrate tasks, workflows, and state coordination across the system"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record config
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "createProject":
+      TRANSFORM { "valid": true, "action": "createProject" }
+    CASE "createTask":
+      TRANSFORM { "valid": true, "action": "createTask" }
+    CASE "updateTask":
+      TRANSFORM { "valid": true, "action": "updateTask" }
+    CASE "getTask":
+      TRANSFORM { "valid": true, "action": "getTask" }
+    CASE "listTasks":
+      TRANSFORM { "valid": true, "action": "listTasks" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "createProject":
+      APX_EXEC "orchestrator.createProject"
+        WITH {
+          "name": config.name,
+          "description": config.description,
+          "metadata": config.metadata
+        }
+    CASE "createTask":
+      APX_EXEC "orchestrator.createTask"
+        WITH {
+          "projectId": projectId,
+          "title": config.title,
+          "description": config.description,
+          "assignee": config.assignee,
+          "priority": config.priority
+        }
+    CASE "updateTask":
+      APX_EXEC "orchestrator.updateTask"
+        WITH {
+          "taskId": config.taskId,
+          "status": config.status,
+          "progress": config.progress,
+          "notes": config.notes
+        }
+    CASE "getTask":
+      APX_EXEC "orchestrator.getTask"
+        WITH {
+          "taskId": config.taskId
+        }
+    CASE "listTasks":
+      APX_EXEC "orchestrator.listTasks"
+        WITH {
+          "projectId": projectId,
+          "status": config.status,
+          "limit": config.limit
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Log operation
+STEP log =
+  APX_EXEC "db.insert"
+    WITH {
+      "table": "orchestrator_logs",
+      "data": {
+        "project_id": projectId,
+        "operation": operation,
+        "config": config,
+        "result": execute.result,
+        "created_at": CURRENT_TIMESTAMP()
+      }
+    }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result
+  }
+
+END FLOW

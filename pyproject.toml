@@ -4,15 +4,46 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voike"
-version = "0.1.0"
-description = "VOIKE Python CLI"
+version = "3.0.1"
+description = "VOIKE - The FLOW-Native AI Platform"
 readme = "README.md"
-requires-python = ">=3.9"
-dependencies = ["requests>=2.31.0"]
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "VOIKE Team", email = "team@voike.ai"}
+]
+keywords = ["ai", "flow", "vasm", "agents", "data-platform"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "requests>=2.28.0",
+    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/voike/voike"
+Documentation = "https://docs.voike.ai"
+Repository = "https://github.com/voike/voike"
+Issues = "https://github.com/voike/voike/issues"
 
 [project.scripts]
 voike = "voike.cli:main"
 
-[tool.setuptools]
-packages = ["voike"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["voike*", "flows*"]
 
+[tool.setuptools.package-data]
+voike = ["flows/**/*.flow"]

@@ -1,0 +1,83 @@
+FLOW "IRX - Index and Retrieval"
+
+DESCRIPTION
+  "Fast indexing and retrieval operations for search optimization"
+END DESCRIPTION
+
+INPUTS
+  text operation
+  record indexConfig
+  text projectId
+END INPUTS
+
+# Step 1: Validate operation
+STEP validate =
+  SWITCH operation
+    CASE "index":
+      TRANSFORM { "valid": true, "action": "index" }
+    CASE "search":
+      TRANSFORM { "valid": true, "action": "search" }
+    CASE "update":
+      TRANSFORM { "valid": true, "action": "update" }
+    CASE "delete":
+      TRANSFORM { "valid": true, "action": "delete" }
+    DEFAULT:
+      ERROR "Invalid operation"
+  END SWITCH
+
+# Step 2: Execute operation
+STEP execute =
+  SWITCH validate.output.action
+    CASE "index":
+      APX_EXEC "irx.createIndex"
+        WITH {
+          "projectId": projectId,
+          "documentId": indexConfig.documentId,
+          "content": indexConfig.content,
+          "metadata": indexConfig.metadata,
+          "fields": indexConfig.fields
+        }
+    CASE "search":
+      APX_EXEC "irx.search"
+        WITH {
+          "projectId": projectId,
+          "query": indexConfig.query,
+          "filters": indexConfig.filters,
+          "limit": indexConfig.limit,
+          "offset": indexConfig.offset
+        }
+    CASE "update":
+      APX_EXEC "irx.updateIndex"
+        WITH {
+          "documentId": indexConfig.documentId,
+          "content": indexConfig.content,
+          "metadata": indexConfig.metadata
+        }
+    CASE "delete":
+      APX_EXEC "irx.deleteIndex"
+        WITH {
+          "documentId": indexConfig.documentId
+        }
+    DEFAULT:
+      ERROR "Unknown action"
+  END SWITCH
+
+# Step 3: Optimize index (if needed)
+STEP optimize =
+  IF operation == "index"
+    THEN APX_EXEC "irx.optimize"
+      WITH {
+        "projectId": projectId
+      }
+    ELSE TRANSFORM { "skipped": true }
+
+# Step 4: Return result
+STEP output =
+  OUTPUT_JSON {
+    "success": true,
+    "operation": operation,
+    "result": execute.result,
+    "optimized": optimize.success
+  }
+
+END FLOW

@@ -15,6 +15,8 @@ export type FlowNodeConfig =
   | { kind: 'APX_EXEC'; target: string; payload?: FlowLiteral }
   | { kind: 'BUILD_VPKG'; manifestRef: string }
   | { kind: 'DEPLOY_SERVICE'; vpkgRef: string; serviceName: string }
+  | { kind: 'RUN_VASM'; program: string; inputs?: Record<string, unknown> }
+  | { kind: 'CALL_FLOW'; flowPath: string; inputs?: Record<string, unknown> }
   | { kind: 'OUTPUT'; source: string; label: string }
   | { kind: 'OUTPUT_TEXT'; value: FlowLiteral };
 
@@ -59,6 +61,10 @@ export function buildNodeConfig(step: FlowStep, previousStep?: string): NodeConf
       return parseBuildVpkg(step);
     case 'DEPLOY_SERVICE':
       return parseDeployService(step);
+    case 'RUN_VASM':
+      return parseRunVasm(step);
+    case 'CALL_FLOW':
+      return parseCallFlow(step);
     case 'OUTPUT':
       return parseOutput(step);
     case 'OUTPUT_TEXT':
@@ -73,6 +79,9 @@ export function buildNodeConfig(step: FlowStep, previousStep?: string): NodeConf
       }
       if (upperLine.startsWith('RUN AGENT')) {
         return parseRunAgent(step);
+      }
+      if (upperLine.startsWith('RUN VASM')) {
+        return parseRunVasm(step);
       }
       if (upperLine.startsWith('OUTPUT TEXT') || upperLine.startsWith('OUTPUT_TEXT')) {
         return parseOutputText(step);
@@ -316,7 +325,39 @@ function extractWithBlock(step: FlowStep): string | undefined {
 function ensureRecord(value: FlowLiteral | undefined): Record<string, unknown> | undefined {
   if (!value) return undefined;
   if (Array.isArray(value) || value === null || typeof value !== 'object') {
-    throw new Error('Agent payload must be an object literal');
+    throw new Error('Payload must be an object literal');
   }
   return value;
+}
+
+function parseRunVasm(step: FlowStep): NodeConfigResult {
+  let line = step.lines[0] || '';
+  const inlineWithIdx = line.toUpperCase().indexOf('WITH ');
+  if (inlineWithIdx >= 0) {
+    line = line.slice(0, inlineWithIdx).trim();
+  }
+  const match = line.match(/RUN\s+VASM\s+"([^"]+)"/i);
+  if (!match) {
+    throw new Error(`Invalid RUN VASM syntax in step ${step.name}`);
+  }
+  const [, program] = match;
+  const payloadBlock = extractWithBlock(step);
+  const inputs = payloadBlock ? ensureRecord(parseFlowPayload(payloadBlock)) : undefined;
+  return { config: { kind: 'RUN_VASM', program, inputs }, dependencies: [] };
+}
+
+function parseCallFlow(step: FlowStep): NodeConfigResult {
+  let line = step.lines[0] || '';
+  const inlineWithIdx = line.toUpperCase().indexOf('WITH ');
+  if (inlineWithIdx >= 0) {
+    line = line.slice(0, inlineWithIdx).trim();
+  }
+  const match = line.match(/CALL\s+FLOW\s+"([^"]+)"/i) || line.match(/CALL_FLOW\s+"([^"]+)"/i);
+  if (!match) {
+    throw new Error(`Invalid CALL FLOW syntax in step ${step.name}`);
+  }
+  const [, flowPath] = match;
+  const payloadBlock = extractWithBlock(step);
+  const inputs = payloadBlock ? ensureRecord(parseFlowPayload(payloadBlock)) : undefined;
+  return { config: { kind: 'CALL_FLOW', flowPath, inputs }, dependencies: [] };
 }
