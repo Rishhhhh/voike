@@ -1,0 +1,37 @@
+"""
+FLOW Service: VASM Encoder
+Encodes x86 instructions to machine code
+Deploy this to VOIKE for edge compilation
+"""
+
+FLOW "vasm_encode"
+
+STEP validate = VALIDATE_INPUT
+  WITH {
+    required: ["instructions", "target"],
+    instructions: INPUT.instructions,
+    target: INPUT.target
+  }
+
+STEP encode = TRANSFORM
+  WITH {
+    data: validate.instructions,
+    operation: "encode_x86",
+    target: validate.target
+  }
+
+STEP optimize = TRANSFORM
+  WITH {
+    data: encode.machineCode,
+    operation: "optimize_code"
+  }
+
+STEP output = RETURN
+  WITH {
+    success: true,
+    machineCode: optimize.result,
+    size: optimize.size,
+    method: "voike_edge"
+  }
+
+END FLOW

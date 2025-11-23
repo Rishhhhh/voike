@@ -1,0 +1,57 @@
+"""
+FLOW Service: ML Training on Grid
+Trains CompilerX models using VOIKE Grid compute
+"""
+
+FLOW "compilerx_train"
+
+STEP prepare = TRANSFORM
+  WITH {
+    data: INPUT.training_data,
+    operation: "prepare_dataset"
+  }
+
+STEP distribute = GRID_SUBMIT
+  WITH {
+    job_type: "ml_training",
+    data: prepare.dataset,
+    config: {
+      model: "compilerx_quality",
+      epochs: INPUT.epochs,
+      learning_rate: INPUT.learning_rate,
+      batch_size: 32
+    },
+    priority: "high"
+  }
+
+STEP monitor = GRID_STATUS
+  WITH {
+    job_id: distribute.job_id,
+    poll_interval: 5
+  }
+
+STEP collect = GRID_RESULTS
+  WITH {
+    job_id: distribute.job_id
+  }
+
+STEP save = BLOB_STORE
+  WITH {
+    path: "models/compilerx_quality.model",
+    data: collect.model,
+    metadata: {
+      accuracy: collect.accuracy,
+      epochs: INPUT.epochs,
+      timestamp: NOW()
+    }
+  }
+
+STEP output = RETURN
+  WITH {
+    success: true,
+    model_path: save.path,
+    accuracy: collect.accuracy,
+    training_time: collect.duration
+  }
+
+END FLOW
